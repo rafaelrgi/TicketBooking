@@ -60,4 +60,32 @@ public class DynamoDbTicketRepository : ITicketRepository
 
         return tickets;
     }
+
+    public async Task<Ticket?> GetTicket(string eventId, string ticketId)
+    {
+        var request = new GetItemRequest
+        {
+            TableName = TableName,
+            Key = new Dictionary<string, AttributeValue>
+            {
+                { "PK", new AttributeValue { S = $"EVENT#{eventId}" } },
+                { "SK", new AttributeValue { S = $"TICKET#{ticketId}" } }
+            }
+        };
+
+        var response = await _dynamoDb.GetItemAsync(request);
+        if (!response.IsItemSet) return null;
+
+        var item = response.Item;
+
+        return new Ticket
+        {
+            EventId = eventId,
+            TicketId = ticketId,
+            Status = item.TryGetValue("Status", out var status) ? status.S : "Unknown",
+            UpdatedAt = item.TryGetValue("UpdatedAt", out var updated)
+                ? DateTime.Parse(updated.S)
+                : DateTime.UtcNow
+        };
+    }
 }

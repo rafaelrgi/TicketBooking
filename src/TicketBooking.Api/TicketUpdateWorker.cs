@@ -3,6 +3,7 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.AspNetCore.SignalR;
 using TicketBooking.Api.Hubs;
+using TicketBooking.Domain.Interfaces;
 
 namespace TicketBooking.Api;
 
@@ -10,12 +11,14 @@ public class TicketUpdateWorker : BackgroundService
 {
     private readonly IAmazonSQS _sqs;
     private readonly IHubContext<TicketHub> _hubContext;
+    private readonly ITicketRepository _ticketRepository;
     private const string QueueUrl = "http://localhost:4566/000000000000/TicketUpdatesQueue";
 
-    public TicketUpdateWorker(IAmazonSQS sqs, IHubContext<TicketHub> hubContext)
+    public TicketUpdateWorker(IAmazonSQS sqs, IHubContext<TicketHub> hubContext, ITicketRepository ticketRepository)
     {
         _sqs = sqs ?? throw new ArgumentNullException(nameof(sqs));
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
+        _ticketRepository = ticketRepository;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,8 +53,19 @@ public class TicketUpdateWorker : BackgroundService
     public async Task ProcessMessage(Message message, CancellationToken stoppingToken)
     {
         var eventId = GetEventIdFromJson(message.Body);
-        await _hubContext.Clients.All.SendAsync("TicketUpdated", eventId, stoppingToken);
+        var ticketId = GetTicketIdFromJson(message.Body);
+
+        if (! await IsTicketCancelled(eventId, ticketId))
+            await _hubContext.Clients.All.SendAsync("TicketUpdated", eventId, stoppingToken);
+
         await _sqs.DeleteMessageAsync(QueueUrl, message.ReceiptHandle, stoppingToken);
+    }
+
+    private async Task<bool> IsTicketCancelled(string eventId, string ticketId)
+    {
+        var ticket = await _ticketRepository.GetTicket(eventId, ticketId);
+        var result  = (ticket?.Status == "Cancelled");
+        return result;
     }
 
     public static string GetEventIdFromJson(string json)
@@ -59,5 +73,12 @@ public class TicketUpdateWorker : BackgroundService
         using var doc = JsonDocument.Parse(json);
         var pk = doc.RootElement.GetProperty("PK").GetString() ?? "";
         return pk.Replace("EVENT#", "");
+    }
+
+    public static string GetTicketIdFromJson(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var pk = doc.RootElement.GetProperty("SK").GetString() ?? "";
+        return pk.Replace("TICKET#", "");
     }
 }

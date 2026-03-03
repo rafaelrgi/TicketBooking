@@ -3,6 +3,7 @@ using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime;
 using Amazon.SQS;
+using Amazon.SQS.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using Testcontainers.LocalStack;
@@ -11,7 +12,7 @@ using Xunit;
 public class LocalStackFixture : IAsyncLifetime
 {
     private readonly LocalStackContainer _localStackContainer =
-        new LocalStackBuilder().WithImage("localstack/localstack:latest").Build();
+        new LocalStackBuilder("localstack/localstack:latest").Build();
 
     public string StateMachineArn { get; private set; } = null!;
     public IAmazonDynamoDB DynamoDb { get; private set; } = null!;
@@ -27,9 +28,9 @@ public class LocalStackFixture : IAsyncLifetime
         var sfConfig = new AmazonStepFunctionsConfig { ServiceURL = _localStackContainer.GetConnectionString() };
 
         DynamoDb = new AmazonDynamoDBClient(new AnonymousAWSCredentials(), config);
-        Sqs = new AmazonSQSClient(new AnonymousAWSCredentials(), sqsConfig); 
+        Sqs = new AmazonSQSClient(new AnonymousAWSCredentials(), sqsConfig);
         StepFunctions = new AmazonStepFunctionsClient(new AnonymousAWSCredentials(), sfConfig);
-    
+
         await CreateResources(DynamoDb, StepFunctions, Sqs);
     }
 
@@ -45,7 +46,14 @@ public class LocalStackFixture : IAsyncLifetime
         });
 
         // Create SQS queue 
-        var queueResponse = await sqs.CreateQueueAsync("TicketUpdatesQueue");
+        var queueResponse = await sqs.CreateQueueAsync(new CreateQueueRequest
+        {
+            QueueName = "TicketUpdatesQueue",
+            Attributes = new Dictionary<string, string>
+            {
+                { "VisibilityTimeout", "2" }
+            }
+        });
         var queueUrl = queueResponse.QueueUrl;
 
         // Create State Machine (Step functions)
