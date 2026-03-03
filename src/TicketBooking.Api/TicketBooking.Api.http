@@ -1,0 +1,32 @@
+### Variáveis
+@url = http://localhost:5070/api/tickets
+
+###
+POST {{url}}/reserve
+Content-Type: application/json
+
+{
+    "eventId": "show-do-ano",
+    "ticketId": "A1-VIP",
+    "userId": "not-a-user"
+}
+
+###
+POST {{url}}/reserve
+Content-Type: application/json
+
+{
+    "eventId": "show-do-ano",
+    "ticketId": "A2-PISTA",
+    "userId": "not-a-user"
+}
+
+###
+POST {{url}}/reserve
+Content-Type: application/json
+
+{
+  "eventId": "show-do-ano",
+  "ticketId": "A4-PISTA",
+  "userId": "not-a-user"
+}
