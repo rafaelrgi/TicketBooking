@@ -2,6 +2,16 @@
 @url = http://localhost:5070/api/tickets
 
 ###
+POST {{url}}/confirm
+Content-Type: application/json
+
+{
+  "eventId": "rock-in-rio",
+  "ticketId": "A1-VIP",
+  "userId": "not-a-user"
+}
+
+###
 POST {{url}}/reserve
 Content-Type: application/json
 

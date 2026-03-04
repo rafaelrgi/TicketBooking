@@ -10,11 +10,14 @@ namespace TicketBooking.Api.Endpoints;
 
 public record ReservationRequest(string EventId, string TicketId, string UserId);
 
+public record ConfirmationRequest(string EventId, string TicketId, string UserId);
+
 public static class TicketApi
 {
     public static void MapTicketEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/tickets/reserve", ReserveTicket);
+        app.MapPost("/api/tickets/confirm", ConfirmTicket);
         app.MapGet("/api/tickets/{eventId}", GetTickets);
 
         app.MapGet("/api/events", GetEventIds);
@@ -32,10 +35,36 @@ public static class TicketApi
         return Results.Ok(tickets);
     }
 
+    private static async Task<IResult> ConfirmTicket(ConfirmationRequest request,
+        ITicketRepository repository,
+        IHubContext<TicketHub>? hubContext)
+    {
+        var ticket = new Ticket
+        {
+            EventId = request.EventId,
+            TicketId = request.TicketId,
+            UserId = request.UserId,
+            Status = "Confirmed",
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var success = await repository.ConfirmTicket(ticket);
+
+        if (hubContext != null)
+        {
+            await hubContext.Clients.All.SendAsync("TicketUpdated", ticket.EventId);
+            Console.WriteLine(">>> Sinal enviado para o Hub");
+        }
+
+        return success
+            ? Results.Ok(new { message = "Confirmation saved" })
+            : Results.BadRequest("Error saving Confirmation");
+    }
+
     private static async Task<IResult> ReserveTicket(ReservationRequest request,
-                ITicketRepository repository,
-                IAmazonStepFunctions stepFunctions,
-                IHubContext<TicketHub> hubContext)
+        ITicketRepository repository,
+        IAmazonStepFunctions stepFunctions,
+        IHubContext<TicketHub>? hubContext)
     {
         var ticket = new Ticket
         {
@@ -46,7 +75,7 @@ public static class TicketApi
             UpdatedAt = DateTime.UtcNow
         };
 
-        var success = await repository.ReserveTicketAsync(ticket);
+        var success = await repository.ReserveTicket(ticket);
         var cancelFlow = await StartReservationFlow(stepFunctions, ticket);
 
         if (hubContext != null)
@@ -70,12 +99,11 @@ public static class TicketApi
             Input = JsonSerializer.Serialize(new
             {
                 PK = $"EVENT#{ticket.EventId}",
-                SK = $"TICKET#{ticket.TicketId}", 
-                status = "Canceled" 
+                SK = $"TICKET#{ticket.TicketId}",
+                status = "Canceled"
             }, new JsonSerializerOptions { PropertyNamingPolicy = null })
         };
 
         return await stepFunctions.StartExecutionAsync(startRequest);
     }
 }
-

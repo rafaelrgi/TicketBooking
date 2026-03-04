@@ -15,7 +15,7 @@ public class DynamoDbTicketRepository : ITicketRepository
         _dynamoDb = dynamoDb;
     }
 
-    public async Task<bool> ReserveTicketAsync(Ticket ticket)
+    public async Task<bool> ReserveTicket(Ticket ticket)
     {
         var request = new PutItemRequest
         {
@@ -28,6 +28,25 @@ public class DynamoDbTicketRepository : ITicketRepository
           { "Status", new AttributeValue { S = "Reserved" } },
           { "UpdatedAt", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
         }
+        };
+
+        var response = await _dynamoDb.PutItemAsync(request);
+        return response.HttpStatusCode == System.Net.HttpStatusCode.OK;
+    }
+
+    public async Task<bool> ConfirmTicket(Ticket ticket)
+    {
+        var request = new PutItemRequest
+        {
+            TableName = TableName,
+            Item = new Dictionary<string, AttributeValue>
+            {
+                { "PK", new AttributeValue { S = $"EVENT#{ticket.EventId}" } },
+                { "SK", new AttributeValue { S = $"TICKET#{ticket.TicketId}" } },
+                { "UserId", new AttributeValue { S = ticket.UserId } },
+                { "Status", new AttributeValue { S = "Confirmed" } },
+                { "UpdatedAt", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
+            }
         };
 
         var response = await _dynamoDb.PutItemAsync(request);

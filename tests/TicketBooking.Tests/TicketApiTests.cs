@@ -5,6 +5,8 @@ using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.SQS;
+using Amazon.SQS.Model;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Tests.Integration;
@@ -101,7 +103,7 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
         // Act:
         var response = await _client.PostAsync(
             $"/api/tickets/reserve",
-             content,
+            content,
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -115,6 +117,40 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
         Assert.NotEmpty(tickets);
         Assert.All(tickets, t => Assert.Equal(eventId, t.EventId));
         Assert.All(tickets, t => Assert.Equal("Reserved", t.Status));
+    }
+
+    [Fact]
+    public async Task ConfirmPayment_ShouldUpdateStatusAndNotify()
+    {
+        await ResetDatabase();
+        // Arrange
+        const string eventId = "rock-in-rio";
+        const string ticketId = "T-600";
+
+        await SeedDatabase(eventId, ticketId, "Reserved");
+        var request = new { EventId = eventId, TicketId = ticketId, userId = "Skynet" };
+
+        bool notified = false;
+        var hubConnection = _factory.CreateHubConnection();
+        hubConnection?.On<object>("TicketUpdated", (data) => notified = true);
+        await hubConnection?.StartAsync(TestContext.Current.CancellationToken)!;
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/tickets/confirm", request,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+
+        var getResponse = await _client.GetAsync($"/api/tickets/{eventId}", TestContext.Current.CancellationToken);
+        var tickets = await getResponse.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(tickets);
+        var confirmedTicket = tickets.FirstOrDefault(t => t.TicketId == ticketId);
+
+        Assert.Equal("Confirmed", confirmedTicket?.Status);
+
+        // buy some time for the worker
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
+       Assert.True(notified, "Worker should have read the queue and send the notification");
     }
 
     private async Task SeedDatabase(string eventId = "rock-in-rio", string ticketId = "T-800", string status = "Reserved")
@@ -137,12 +173,14 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
 
     private async Task ResetDatabase()
     {
-        //var client = Services.GetRequiredService<IAmazonDynamoDB>();
+        try
+        {
+            await _dynamoDb.DeleteTableAsync("Tickets");
+        }
+        catch
+        {
+        }
 
-        // Deleta se existir (para não dar erro na primeira vez)
-        try { await _dynamoDb.DeleteTableAsync("Tickets"); } catch { }
-
-        // Recria a tabela do zero
         await _dynamoDb.CreateTableAsync(new CreateTableRequest
         {
             TableName = "Tickets",
