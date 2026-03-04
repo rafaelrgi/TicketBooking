@@ -9,7 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.LocalStack;
-using TicketBooking.Api;
+using Microsoft.AspNetCore.SignalR.Client;
 
 namespace TicketBooking.Tests.Integration;
 
@@ -68,6 +68,17 @@ public class TicketApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             },
             ProvisionedThroughput = new ProvisionedThroughput(5, 5)
         });
+    }
+
+    public HubConnection CreateHubConnection()
+    {
+        var hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost/ticketHub", o =>
+            {
+                o.HttpMessageHandlerFactory = _ => Server.CreateHandler();
+            })
+            .Build();
+        return hubConnection;
     }
 
     public new async Task DisposeAsync() => await _localStack.DisposeAsync();

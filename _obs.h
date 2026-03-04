@@ -2,13 +2,17 @@ x Renomear "seat" >> "ticket"
 
 x Testes
 
-- Combo select evento
+x Combo select evento
 
-- Service & Dto
+x Confirmação pgto
 
-- Url's em config
+- Redis
 
 - Log
+
+- Readme
+
+- Url's em config
 
 - Grafana LGTM Stack (O "Padrão Ouro" da indústria)
 Se você quer algo que as empresas realmente usam em produção (inclusive no Horizon/Portside, possivelmente), aprenda a LGTM Stack.

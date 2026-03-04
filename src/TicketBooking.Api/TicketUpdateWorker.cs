@@ -24,6 +24,7 @@ public class TicketUpdateWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        Console.WriteLine($">>> Worker Started at: {DateTimeOffset.Now}");
         while (!stoppingToken.IsCancellationRequested)
         {
             var request = new ReceiveMessageRequest
@@ -53,6 +54,7 @@ public class TicketUpdateWorker : BackgroundService
 
     public async Task ProcessMessage(Message message, CancellationToken stoppingToken)
     {
+        Console.WriteLine($">>> Worker processing message: {message.Body}");
         var eventId = GetEventIdFromJson(message.Body);
         var ticketId = GetTicketIdFromJson(message.Body);
 

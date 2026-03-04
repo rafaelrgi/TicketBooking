@@ -9,7 +9,7 @@
 
 @if (_tickets == null)
 {
-    <MudProgressLinear Color="MudBlazor.Color.Primary" Indeterminate="true"/>
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true"/>
 }
 else
 {
@@ -31,7 +31,8 @@ else
                 <h5>Status</h5>
                 <MudPaper Class="pa-4">
                     <MudChart ChartType="ChartType.Donut" Width="300px" Height="300px" InputData="@_chartStatusData"
-                              ChartOptions="@(new ChartOptions { ChartPalette = _chartStatusColors })" InputLabels="@_chartStatusLabels">
+                              ChartOptions="@(new ChartOptions { ChartPalette = _chartStatusColors })"
+                              InputLabels="@_chartStatusLabels">
                         <CustomGraphics>
                             <text class="donut-inner-text" x="50%" y="42%" dominant-baseline="middle" text-anchor="middle"
                                   fill="white"
@@ -49,7 +50,8 @@ else
                 <h5>Type</h5>
                 <MudPaper Class="pa-4">
                     <MudChart ChartType="ChartType.Donut" Width="300px" Height="300px" InputData="@_chartTypeData"
-                              ChartOptions="@(new ChartOptions { ChartPalette = _chartTypeColors })" InputLabels="@_chartTypeLabels">
+                              ChartOptions="@(new ChartOptions { ChartPalette = _chartTypeColors })"
+                              InputLabels="@_chartTypeLabels">
                         <CustomGraphics>
                             <text class="donut-inner-text" x="50%" y="42%" dominant-baseline="middle" text-anchor="middle"
                                   fill="white"
@@ -194,10 +196,10 @@ else
 
     private static MudBlazor.Color GetStatusColor(string status) => status switch
     {
-        "Reserved" => MudBlazor.Color.Warning,
-        "Cancelled" => MudBlazor.Color.Info, //MudBlazor.Color.Error,
-        "Confirmed" => MudBlazor.Color.Success,
-        _ => MudBlazor.Color.Default
+        "Reserved" => Color.Warning,
+        "Cancelled" => Color.Info,
+        "Confirmed" => Color.Success,
+        _ => Color.Default
     };
 
     private HubConnection? _hubConnection;

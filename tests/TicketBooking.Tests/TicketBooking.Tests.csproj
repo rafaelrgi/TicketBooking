@@ -19,6 +19,7 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" Version="8.8.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Polly" Version="8.6.5" />
@@ -33,6 +34,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TicketBooking.Api\TicketBooking.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.AspNetCore.SignalR.Client.Core">
+      <HintPath>..\..\..\..\..\.nuget\packages\microsoft.aspnetcore.signalr.client.core\9.0.0\lib\net9.0\Microsoft.AspNetCore.SignalR.Client.Core.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
