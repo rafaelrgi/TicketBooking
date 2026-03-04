@@ -98,3 +98,5 @@ app.MapHub<TicketHub>("/tickethub");
 app.MapTicketEndpoints();
 
 app.Run();
+
+public partial class Program { }

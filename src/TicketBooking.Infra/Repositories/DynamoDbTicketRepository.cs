@@ -88,4 +88,19 @@ public class DynamoDbTicketRepository : ITicketRepository
                 : DateTime.UtcNow
         };
     }
+
+    public async Task<List<string>> GetEventIds()
+    {
+        var request = new ScanRequest
+        {
+            TableName = TableName,
+            ProjectionExpression = "PK"
+        };
+        var response = await _dynamoDb.ScanAsync(request);
+
+        return response.Items
+            .Select(i => i["PK"].S.Replace("EVENT#", ""))
+            .Distinct()
+            .ToList();
+    }
 }
