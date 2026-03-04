@@ -6,7 +6,7 @@ POST {{url}}/reserve
 Content-Type: application/json
 
 {
-    "eventId": "show-do-ano",
+    "eventId": "rock-in-rio",
     "ticketId": "A1-VIP",
     "userId": "not-a-user"
 }
@@ -16,8 +16,18 @@ POST {{url}}/reserve
 Content-Type: application/json
 
 {
-    "eventId": "show-do-ano",
-    "ticketId": "A2-PISTA",
+  "eventId": "rock-in-rio",
+  "ticketId": "B52-GA",
+  "userId": "not-a-user"
+}
+
+###
+POST {{url}}/reserve
+Content-Type: application/json
+
+{
+    "eventId": "rock-in-rio",
+    "ticketId": "X42-GA",
     "userId": "not-a-user"
 }
 
@@ -26,7 +36,7 @@ POST {{url}}/reserve
 Content-Type: application/json
 
 {
-  "eventId": "show-do-ano",
-  "ticketId": "A4-PISTA",
+  "eventId": "woodstock",
+  "ticketId": "A1-VIP",
   "userId": "not-a-user"
 }

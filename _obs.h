@@ -70,14 +70,14 @@ docker exec -it ticket-booking-aws awslocal stepfunctions describe-execution --e
 // update na tabela
 docker exec -it ticket-booking-aws awslocal dynamodb update-item \
     --table-name Tickets \
-    --key '{"PK": {"S": "EVENT#show-do-ano"}, "SK": {"S": "TICKET#A1-VIP"}}' \
+    --key '{"PK": {"S": "EVENT#rock-in-rio"}, "SK": {"S": "TICKET#A1-VIP"}}' \
     --update-expression "SET #s = :val" \
     --expression-attribute-names '{"#s": "Status"}' \
     --expression-attribute-values '{":val": {"S": "Confirmed"}}'
 
 docker exec -it ticket-booking-aws awslocal dynamodb update-item \
     --table-name Seats \
-    --key '{"PK": {"S": "EVENT#show-do-ano"}, "SK": {"S": "TICKET#A1-VIP"}}' \
+    --key '{"PK": {"S": "EVENT#rock-in-rio"}, "SK": {"S": "TICKET#A1-VIP"}}' \
     --update-expression "SET #s = :val" \
     --expression-attribute-names '{"#s": "Status"}' \
     --expression-attribute-values '{":val": {"S": "Reserved"}}'

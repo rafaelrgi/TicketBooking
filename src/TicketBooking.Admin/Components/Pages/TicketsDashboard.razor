@@ -5,78 +5,119 @@
 @rendermode InteractiveServer
 @inject HttpClient Http
 
-<MudText Typo="Typo.h4" Class="mb-4">Tickets Dashboard</MudText>
+<MudText Typo="Typo.h4" Class="mb-5">Tickets Dashboard</MudText>
 
 @if (_tickets == null)
 {
-    <MudProgressLinear Color="MudBlazor.Color.Primary" Indeterminate="true" />
+    <MudProgressLinear Color="MudBlazor.Color.Primary" Indeterminate="true"/>
 }
 else
 {
-    <MudTable Items="@_tickets" Hover="true" Breakpoint="Breakpoint.Sm" Loading="@_loading">
-        <HeaderContent>
-            <MudTh>Event</MudTh>
-            <MudTh>Ticket</MudTh>
-            <MudTh>Status</MudTh>
-            <MudTh>Updated</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Event">@context.EventId</MudTd>
-            <MudTd DataLabel="Ticket">@context.TicketId</MudTd>
-            <MudTd DataLabel="Status">
-                <MudChip T="string" Color="@GetStatusColor(context.Status)" Variant="Variant.Filled">
-                    @context.Status
-                </MudChip>
-            </MudTd>
-            <MudTd DataLabel="Updated">@context.UpdatedAt.ToString("G")</MudTd>
-        </RowTemplate>
-    </MudTable>
+    <div class="d-flex align-items-center mb-4 gap-2">
+        <label for="cbxEvent"><h5>Event</h5></label>
+        <select id="cbxEvent" @onchange="OnEventSelected" class="form-control" style="max-width: 360px;">
+            <option value="">Select an event...</option>
+            @foreach (var id in _events)
+            {
+                <option value="@id">@id</option>
+            }
+        </select>
+    </div>
 
-    <MudPaper Class="pa-4">
-        <MudChart ChartType="ChartType.Donut" Width="300px" Height="300px" InputData="@chartData"
-            ChartOptions="@(new ChartOptions { ChartPalette = chartColors })" InputLabels="@chartLabels">
-            <CustomGraphics>
-                <text class="donut-inner-text" x="50%" y="42%" dominant-baseline="middle" text-anchor="middle" fill="white"
-                    font-family="Helvetica" font-size="6px">Total</text>
-                <text class="donut-inner-text" x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" fill="white"
-                    font-family="Helvetica" font-size="7px">@chartData.Sum().ToString()</text>
-            </CustomGraphics>
-        </MudChart>
-    </MudPaper>
+    @if (!string.IsNullOrEmpty(_selectedEvent))
+    {
+        <div class="row mt-4 mb-2">
+            <div class="col-md-6 text-center">
+                <h5>Status</h5>
+                <MudPaper Class="pa-4">
+                    <MudChart ChartType="ChartType.Donut" Width="300px" Height="300px" InputData="@_chartStatusData"
+                              ChartOptions="@(new ChartOptions { ChartPalette = _chartStatusColors })" InputLabels="@_chartStatusLabels">
+                        <CustomGraphics>
+                            <text class="donut-inner-text" x="50%" y="42%" dominant-baseline="middle" text-anchor="middle"
+                                  fill="white"
+                                  font-family="Helvetica" font-size="6px">Total
+                            </text>
+                            <text class="donut-inner-text" x="50%" y="58%" dominant-baseline="middle" text-anchor="middle"
+                                  fill="white"
+                                  font-family="Helvetica" font-size="7px">@_chartStatusData.Sum().ToString()</text>
+                        </CustomGraphics>
+                    </MudChart>
+                </MudPaper>
+            </div>
+
+            <div class="col-md-6 text-center">
+                <h5>Type</h5>
+                <MudPaper Class="pa-4">
+                    <MudChart ChartType="ChartType.Donut" Width="300px" Height="300px" InputData="@_chartTypeData"
+                              ChartOptions="@(new ChartOptions { ChartPalette = _chartTypeColors })" InputLabels="@_chartTypeLabels">
+                        <CustomGraphics>
+                            <text class="donut-inner-text" x="50%" y="42%" dominant-baseline="middle" text-anchor="middle"
+                                  fill="white"
+                                  font-family="Helvetica" font-size="6px">Total
+                            </text>
+                            <text class="donut-inner-text" x="50%" y="58%" dominant-baseline="middle" text-anchor="middle"
+                                  fill="white"
+                                  font-family="Helvetica" font-size="7px">@_chartTypeData.Sum().ToString()</text>
+                        </CustomGraphics>
+                    </MudChart>
+                </MudPaper>
+            </div>
+        </div>
+
+        <MudTable Items="@_tickets" Hover="true" Breakpoint="Breakpoint.Sm" Loading="@_loading">
+            <HeaderContent>
+                <MudTh>Event</MudTh>
+                <MudTh>Ticket</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Updated</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Event">@context.EventId</MudTd>
+                <MudTd DataLabel="Ticket">@context.TicketId</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Color="@GetStatusColor(context.Status)" Variant="Variant.Outlined">
+                        @context.Status
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Updated">@context.UpdatedAt.ToString("G")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
 }
 
 @code {
+
     protected override async Task OnInitializedAsync()
     {
         Console.WriteLine(">>> On InitializedAsync");
 
-        hubConnection = new HubConnectionBuilder()
-        .WithUrl("http://localhost:5070/tickethub")
-        .WithAutomaticReconnect()
-        .Build();
-
         //initial loading
         _loading = true;
-        //TODO: selecionar evento combobox
-        await GetTickets("show-do-ano");
-        UpdateChartData();
+        await GetEvents();
+        await GetTickets();
         _loading = false;
 
-        hubConnection.On<object>("TicketUpdated", async (data) =>
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5070/tickethub")
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<object>("TicketUpdated", async (data) =>
         {
             Console.WriteLine($">>> SINAL RECEBIDO! Conteúdo: {data}");
-            //TODO: atualiza tela apenas se pertence ao evento ativo
             string eventId = data?.ToString() ?? string.Empty;
-            _loading = true;
-            await GetTickets("show-do-ano");
-            UpdateChartData();
-            _loading = false;
-            await InvokeAsync(StateHasChanged);
+            if (eventId == _selectedEvent)
+            {
+                _loading = true;
+                await GetTickets();
+                _loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         });
 
         try
         {
-            await hubConnection.StartAsync();
+            await _hubConnection.StartAsync();
         }
         catch (Exception ex)
         {
@@ -91,45 +132,85 @@ else
         int vip = _tickets.Count(s => s.TicketId.Contains("VIP", StringComparison.OrdinalIgnoreCase));
         int normal = _tickets.Count(s => !s.TicketId.Contains("VIP", StringComparison.OrdinalIgnoreCase));
 
-        chartData = new[] { (double)vip, (double)normal };
-        chartLabels = new[] { $"Vip {vip} ", $"Normal {normal} " };
+        _chartTypeData = [(double)vip, (double)normal];
+        _chartTypeLabels = [$"Vip {vip} ", $"GA {normal} "];
+
+        int reserved = _tickets.Count(s => s.Status == "Reserved");
+        int cancelled = _tickets.Count(s => s.Status == "Cancelled");
+        int confirmed = _tickets.Count(s => s.Status == "Confirmed");
+
+        _chartStatusData = [(double)reserved, (double)cancelled, (double)confirmed];
+        _chartStatusLabels = [$"Reserved {reserved} ", $"Cancelled {cancelled} ", $"Confirmed {confirmed} "];
     }
 
-    private async Task GetTickets(string eventId)
+    private async Task GetEvents()
     {
-        //TODO: Service & Dto
+        _events = [];
         try
         {
-            //TODO: config
-            var data = await Http.GetFromJsonAsync<List<Ticket>>($"http://localhost:5070/api/tickets/{eventId}");
-            if (data != null) _tickets = data;
+            //TODO: url in config
+            var data = await Http.GetFromJsonAsync<List<string>>($"http://localhost:5070/api/events");
+            if (data != null) _events = data;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Erro ao buscar assentos: {ex.Message}");
+            Console.WriteLine($"Erro ao buscar eventos: {ex.Message}");
         }
+    }
+
+    private async Task GetTickets()
+    {
+        _tickets = [];
+        if (!string.IsNullOrEmpty(_selectedEvent))
+        {
+            try
+            {
+                //TODO: url in config
+                var data = await Http.GetFromJsonAsync<List<Ticket>>($"http://localhost:5070/api/tickets/{_selectedEvent}");
+                if (data != null) _tickets = data;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Erro ao buscar assentos: {ex.Message}");
+            }
+        }
+
+        UpdateChartData();
+    }
+
+    private async Task OnEventSelected(ChangeEventArgs e)
+    {
+        _selectedEvent = e.Value?.ToString();
+        await GetTickets();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (hubConnection is not null)
+        if (_hubConnection is not null)
         {
-            await hubConnection.DisposeAsync();
+            await _hubConnection.DisposeAsync();
         }
     }
 
-    private MudBlazor.Color GetStatusColor(string status) => status switch
+    private static MudBlazor.Color GetStatusColor(string status) => status switch
     {
         "Reserved" => MudBlazor.Color.Warning,
-        "Canceled" => MudBlazor.Color.Error,
+        "Cancelled" => MudBlazor.Color.Info, //MudBlazor.Color.Error,
         "Confirmed" => MudBlazor.Color.Success,
         _ => MudBlazor.Color.Default
     };
 
-    private HubConnection? hubConnection;
+    private HubConnection? _hubConnection;
     private List<Ticket>? _tickets;
+    private List<string> _events = [];
+    private string? _selectedEvent;
     private bool _loading = true;
-    private double[] chartData = { 0, 0 };
-    private string[] chartLabels = { "VIP", "Normal" };
-    private string[] chartColors = { "#FFD700", "#1E88E5" };
+
+    private double[] _chartTypeData = [0, 0];
+    private string[] _chartTypeLabels = ["VIP", "GA"];
+    private readonly string[] _chartTypeColors = ["#FFD700", "#771cff"];
+
+    private double[] _chartStatusData = [0, 0, 0];
+    private string[] _chartStatusLabels = ["Reserved", "Cancelled", "Confirmed"];
+    private readonly string[] _chartStatusColors = ["#ffa200", "#2196F3", "#00C853"];
 }
