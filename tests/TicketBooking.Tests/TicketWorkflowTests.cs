@@ -6,6 +6,7 @@ using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using TicketBooking.Api;
 using TicketBooking.Api.Hubs;
@@ -58,6 +59,8 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         // Arrange
         const string pk = "EVENT#rock-grande-do=sul";
         const string sk = "TICKET#99";
+
+        await ResetDatabase();
         await _fixture.DynamoDb.PutItemAsync("Tickets", new Dictionary<string, AttributeValue>
         {
             { "PK", new AttributeValue(pk) },
@@ -103,6 +106,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             ReceiptHandle = handleMock
         };
 
+        await ResetDatabase();
         var mockClientProxy = new Mock<IClientProxy>();
 
         var mockClients = new Mock<IHubClients>();
@@ -116,7 +120,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = "Reserved" });
 
         var mockSqs = new Mock<IAmazonSQS>();
-        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, mockRepo.Object);
+        var worker = CreateTicketUpdateWorker(mockRepo, mockSqs, mockHubContext);
 
         // Act
         await worker.ProcessMessage(message, TestContext.Current.CancellationToken);
@@ -137,19 +141,37 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             Times.Once);
     }
 
+    private static TicketUpdateWorker CreateTicketUpdateWorker(Mock<ITicketRepository> mockRepo, Mock<IAmazonSQS> mockSqs, Mock<IHubContext<TicketHub>> mockHubContext)
+    {
+        var mockServiceProvider = new Mock<IServiceProvider>();
+        mockServiceProvider
+            .Setup(x => x.GetService(typeof(ITicketRepository)))
+            .Returns(mockRepo.Object);
+        var mockScope = new Mock<IServiceScope>();
+        mockScope.Setup(x => x.ServiceProvider).Returns(mockServiceProvider.Object);
+        var mockScopeFactory = new Mock<IServiceScopeFactory>();
+        mockScopeFactory
+            .Setup(x => x.CreateScope())
+            .Returns(mockScope.Object);
+        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, mockScopeFactory.Object);
+        return worker;
+    }
+
     [Fact]
     public async Task ProcessMessage_WhenJsonIsInvalid_ShouldNotNotifyNorDeleteMessage()
     {
         // Arrange
-        var eventId = "monsters-of-rock";
-        var ticketId = "TICKET#123";
-        var badJson = "{ \"PK\": \"EVENT#broken-json... wait, where is the rest? Thanos snap!!!";
+        const string eventId = "monsters-of-rock";
+        const string ticketId = "TICKET#123";
+        const string badJson = "{ \"PK\": \"EVENT#broken-json... wait, where is the rest? Thanos snap!!!";
         const string handleMock = "fake-handle-123";
         var message = new Message
         {
             Body = badJson,
             ReceiptHandle = handleMock
         };
+
+        await ResetDatabase();
 
         var mockClientProxy = new Mock<IClientProxy>();
         var mockClients = new Mock<IHubClients>();
@@ -163,7 +185,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = "Reserved" });
 
         var mockSqs = new Mock<IAmazonSQS>();
-        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, mockRepo.Object);
+        var worker = CreateTicketUpdateWorker(mockRepo, mockSqs, mockHubContext);
 
         // Act
         Func<Task> act = async () => await worker.ProcessMessage(message, TestContext.Current.CancellationToken);
@@ -188,18 +210,20 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     }
 
     [Fact]
-    public async Task ProcessMessage_WhenTicketIsAlreadyCancelled_ShouldNotNotifyAgain()
+    public async Task ProcessMessage_WhenTicketIsCancelled_ShouldNotNotify()
     {
         // Arrange
-        var eventId = "monsters-of-rock";
-        var ticketId = "123";
-        var json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\"}}";
+        const string eventId = "monsters-of-rock";
+        const string ticketId = "123";
+        const string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\"}}";
         const string handleMock = "fake-handle-123";
         var message = new Message
         {
             Body = json,
             ReceiptHandle = handleMock
         };
+
+        await ResetDatabase();
 
         var mockClientProxy = new Mock<IClientProxy>();
         var mockClients = new Mock<IHubClients>();
@@ -214,22 +238,39 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         mockRepo.Setup(r => r.GetTicket(eventId, ticketId))
             .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = "Cancelled" });
 
-        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, mockRepo.Object);
+        var worker = CreateTicketUpdateWorker(mockRepo, mockSqs, mockHubContext);
 
         // Act
         await worker.ProcessMessage(message, TestContext.Current.CancellationToken);
 
         // Assert
-        // Cancelled item, no notification!
+        // Cancelled item, notification!
         mockClientProxy.Verify(
             client => client.SendCoreAsync("TicketUpdated", It.IsAny<object[]>(),
                 TestContext.Current.CancellationToken),
-            Times.Never);
+            Times.Once);
 
         // Canceled item, should delete the message
         mockSqs.Verify(x => x.DeleteMessageAsync(
                 It.IsAny<string>(), handleMock,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    private async Task ResetDatabase()
+    {
+        //var client = Services.GetRequiredService<IAmazonDynamoDB>();
+
+        // Deleta se existir (para não dar erro na primeira vez)
+        try { await _fixture.DynamoDb.DeleteTableAsync("Tickets"); } catch { }
+
+        // Recria a tabela do zero
+        await _fixture.DynamoDb.CreateTableAsync(new CreateTableRequest
+        {
+            TableName = "Tickets",
+            AttributeDefinitions = [new("PK", ScalarAttributeType.S), new("SK", ScalarAttributeType.S)],
+            KeySchema = [new("PK", KeyType.HASH), new("SK", KeyType.RANGE)],
+            ProvisionedThroughput = new ProvisionedThroughput(5, 5)
+        });
     }
 }
