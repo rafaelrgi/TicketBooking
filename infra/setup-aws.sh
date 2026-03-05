@@ -5,15 +5,14 @@ awslocal dynamodb create-table \
     --table-name Tickets \
     --attribute-definitions AttributeName=PK,AttributeType=S AttributeName=SK,AttributeType=S \
     --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
-    --billing-mode PAY_PER_REQUEST \
-    --stream-specification StreamEnabled=true,StreamViewType=NEW_AND_OLD_IMAGES
+    --billing-mode PAY_PER_REQUEST || true
 
 # Create SQS Queue 
-awslocal sqs create-queue --queue-name TicketUpdatesQueue
+awslocal sqs create-queue --queue-name TicketUpdatesQueue || true
 
 # Reservation State Machine
 awslocal stepfunctions delete-state-machine \
-    --state-machine-arn arn:aws:states:us-east-1:000000000000:stateMachine:TicketBookingWorkflow
+    --state-machine-arn arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow || true
 
 DEFINITION='{
   "StartAt": "WaitForPayment",
@@ -33,19 +32,21 @@ DEFINITION='{
           "PK": { "S.$": "$.PK" },
           "SK": { "S.$": "$.SK" }
         },
-        "UpdateExpression": "SET #s = :cancelled",
+        "UpdateExpression": "SET #s = :available, UserId = :empty, UpdatedAt = :now",
         "ConditionExpression": "#s <> :confirmed",
         "ExpressionAttributeNames": { "#s": "Status" },
         "ExpressionAttributeValues": {
-          ":cancelled": { "S": "Cancelled" },
-          ":confirmed": { "S": "Confirmed" } 
+          ":available": { "S": "Available" },
+          ":confirmed": { "S": "Confirmed" },
+          ":empty": { "S": "" },
+          ":now": { "S.$": "$$.State.EnteredTime" }
         }
       },
       "Catch": [
-      {
-        "ErrorEquals": ["DynamoDb.ConditionalCheckFailedException"],
-        "Next": "IgnoreCancellation" 
-      }
+        {
+          "ErrorEquals": ["DynamoDb.ConditionalCheckFailedException"],
+          "Next": "IgnoreCancellation"
+        }
       ],
       "Next": "NotifyQueue"
     },
@@ -58,11 +59,11 @@ DEFINITION='{
       "Type": "Task",
       "Resource": "arn:aws:states:::sqs:sendMessage",
       "Parameters": {
-        "QueueUrl": "http://localhost:4566/000000000000/TicketUpdatesQueue",
+        "QueueUrl": "http://sqs.sa-east-1.localhost.localstack.cloud:4566/000000000000/TicketUpdatesQueue",
         "MessageBody": {
           "PK.$": "$.PK",
           "SK.$": "$.SK",
-          "Status": "Cancelled"
+          "Status": "Available"
         }
       },
       "End": true
@@ -73,4 +74,4 @@ DEFINITION='{
 awslocal stepfunctions create-state-machine \
     --name "TicketBookingWorkflow" \
     --definition "$DEFINITION" \
-    --role-arn "arn:aws:iam::000000000000:role/stepfunctions-role"
+    --role-arn "arn:aws:iam::000000000000:role/stepfunctions-role"  || true

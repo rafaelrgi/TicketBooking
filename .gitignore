@@ -3,6 +3,10 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+infra/infra/
+infra/scripts/
+.localstack/
+
 # dotenv files
 .env
 

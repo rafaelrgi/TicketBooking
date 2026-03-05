@@ -138,11 +138,11 @@ else
         _chartTypeLabels = [$"Vip {vip} ", $"GA {normal} "];
 
         int reserved = _tickets.Count(s => s.Status == "Reserved");
-        int cancelled = _tickets.Count(s => s.Status == "Cancelled");
+        int availabe = _tickets.Count(s => s.Status == "Available");
         int confirmed = _tickets.Count(s => s.Status == "Confirmed");
 
-        _chartStatusData = [(double)reserved, (double)cancelled, (double)confirmed];
-        _chartStatusLabels = [$"Reserved {reserved} ", $"Cancelled {cancelled} ", $"Confirmed {confirmed} "];
+        _chartStatusData = [(double)reserved, (double)availabe, (double)confirmed];
+        _chartStatusLabels = [$"Reserved {reserved} ", $"Available {availabe} ", $"Confirmed {confirmed} "];
     }
 
     private async Task GetEvents()
@@ -197,7 +197,7 @@ else
     private static MudBlazor.Color GetStatusColor(string status) => status switch
     {
         "Reserved" => Color.Warning,
-        "Cancelled" => Color.Info,
+        "Available" => Color.Info,
         "Confirmed" => Color.Success,
         _ => Color.Default
     };
@@ -213,6 +213,6 @@ else
     private readonly string[] _chartTypeColors = ["#FFD700", "#771cff"];
 
     private double[] _chartStatusData = [0, 0, 0];
-    private string[] _chartStatusLabels = ["Reserved", "Cancelled", "Confirmed"];
+    private string[] _chartStatusLabels = ["Reserved", "Available", "Confirmed"];
     private readonly string[] _chartStatusColors = ["#ffa200", "#2196F3", "#00C853"];
 }

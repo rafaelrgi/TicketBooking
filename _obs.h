@@ -1,52 +1,6 @@
-1. Só cancelar tickets NÃO confirmados
-2. Só reservar tickets NÃO confirmados (e não reservados)
-3. Só confirmar tickets reservados
-
-x Renomear "seat" >> "ticket"
-
-x Testes
-
-x Combo select evento
-
-x Confirmação pgto
-
-x Redis
-
-- Log
-
-- Readme
-
-- Url's em config
-
-- Grafana LGTM Stack (O "Padrão Ouro" da indústria)
-Se você quer algo que as empresas realmente usam em produção (inclusive no Horizon/Portside, possivelmente), aprenda a LGTM Stack.
-
-Loki (Logs)
-
-Grafana (Dashboards)
-
-Tempo (Traces)
-
-Mimir (Métricas)
-
-A dica de ouro (Docker "all-in-one"):
-A própria Grafana Labs mantém uma imagem Docker chamada grafana/otel-lgtm que sobe a stack inteira pronta para receber dados de OpenTelemetry em segundos.
-
-Bash
-docker run -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
-
 ------------------------------------------------------------------------------------------------------------------------
 
 http://localhost:5025
-
-// docker compose manual
-docker run -d --name ticket-booking-aws \
-  -p 4566:4566 -p 4510-4559:4510-4559 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(pwd)/infra:/etc/localstack/init/ready.d \
-  -e SERVICES=dynamodb,stepfunctions,sts,iam \
-  -e AWS_DEFAULT_REGION=us-east-1 \
-  localstack/localstack
 
 // Rodar Api  no Terminal
 dotnet run --project src/TicketBooking.Api/TicketBooking.Api.csproj --launch-profile http

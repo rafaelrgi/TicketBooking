@@ -4,7 +4,6 @@ using Amazon.StepFunctions.Model;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Caching.Distributed;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Application.Interfaces;
 
@@ -106,7 +105,8 @@ public static class TicketApi
         //TODO: reuse new JsonSerializerOptions { PropertyNamingPolicy = null })
         var startRequest = new StartExecutionRequest
         {
-            StateMachineArn = "arn:aws:states:us-east-1:000000000000:stateMachine:TicketBookingWorkflow",
+            //TODO: cfg?
+            StateMachineArn = "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow",
             Input = JsonSerializer.Serialize(new
             {
                 PK = $"EVENT#{ticket.EventId}",

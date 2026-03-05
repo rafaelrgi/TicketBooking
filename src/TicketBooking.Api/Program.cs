@@ -37,7 +37,7 @@ if (builder.Environment.IsDevelopment())
         var config = new AmazonDynamoDBConfig
         {
             ServiceURL = "http://localhost:4566",
-            AuthenticationRegion = "us-east-1"
+            AuthenticationRegion = "sa-east-1"
         };
         return new AmazonDynamoDBClient(credentials, config);
     });
@@ -46,7 +46,7 @@ if (builder.Environment.IsDevelopment())
         var config = new AmazonSQSConfig
         {
             ServiceURL = "http://localhost:4566",
-            AuthenticationRegion = "us-east-1"
+            AuthenticationRegion = "sa-east-1"
         };
         return new AmazonSQSClient(credentials, config);
     });
@@ -56,7 +56,7 @@ if (builder.Environment.IsDevelopment())
         var config = new AmazonStepFunctionsConfig 
         { 
             ServiceURL = "http://localhost:4566", 
-            AuthenticationRegion = "us-east-1"
+            AuthenticationRegion = "sa-east-1"
         };
         return new AmazonStepFunctionsClient(credentials, config);
     });
