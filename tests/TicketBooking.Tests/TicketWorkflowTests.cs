@@ -1,4 +1,5 @@
 using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -6,12 +7,16 @@ using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Moq;
 using TicketBooking.Api;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
+using TicketBooking.Infra.Caching;
 
 public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
 {
@@ -141,8 +146,12 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             Times.Once);
     }
 
-    private static TicketUpdateWorker CreateTicketUpdateWorker(Mock<ITicketRepository> mockRepo, Mock<IAmazonSQS> mockSqs, Mock<IHubContext<TicketHub>> mockHubContext)
+    private static TicketUpdateWorker CreateTicketUpdateWorker(Mock<ITicketRepository> mockRepo, Mock<IAmazonSQS> mockSqs,
+        Mock<IHubContext<TicketHub>> mockHubContext)
     {
+        var opts = Options.Create(new MemoryDistributedCacheOptions());
+        IDistributedCache cache = new MemoryDistributedCache(opts);
+
         var mockServiceProvider = new Mock<IServiceProvider>();
         mockServiceProvider
             .Setup(x => x.GetService(typeof(ITicketRepository)))
@@ -153,7 +162,10 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         mockScopeFactory
             .Setup(x => x.CreateScope())
             .Returns(mockScope.Object);
-        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, mockScopeFactory.Object);
+
+
+        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, new TicketCacheService(cache),
+            mockScopeFactory.Object);
         return worker;
     }
 
@@ -262,7 +274,13 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         //var client = Services.GetRequiredService<IAmazonDynamoDB>();
 
         // Deleta se existir (para não dar erro na primeira vez)
-        try { await _fixture.DynamoDb.DeleteTableAsync("Tickets"); } catch { }
+        try
+        {
+            await _fixture.DynamoDb.DeleteTableAsync("Tickets");
+        }
+        catch
+        {
+        }
 
         // Recria a tabela do zero
         await _fixture.DynamoDb.CreateTableAsync(new CreateTableRequest

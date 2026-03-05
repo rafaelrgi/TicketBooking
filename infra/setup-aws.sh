@@ -34,10 +34,25 @@ DEFINITION='{
           "SK": { "S.$": "$.SK" }
         },
         "UpdateExpression": "SET #s = :cancelled",
+        "ConditionExpression": "#s <> :confirmed",
         "ExpressionAttributeNames": { "#s": "Status" },
-        "ExpressionAttributeValues": { ":cancelled": { "S": "Cancelled" } }
+        "ExpressionAttributeValues": {
+          ":cancelled": { "S": "Cancelled" },
+          ":confirmed": { "S": "Confirmed" } 
+        }
       },
+      "Catch": [
+      {
+        "ErrorEquals": ["DynamoDb.ConditionalCheckFailedException"],
+        "Next": "IgnoreCancellation" 
+      }
+      ],
       "Next": "NotifyQueue"
+    },
+    "IgnoreCancellation": {
+      "Type": "Pass",
+      "Result": "Ticket was already confirmed, skipping cancellation.",
+      "End": true
     },
     "NotifyQueue": {
       "Type": "Task",

@@ -7,12 +7,12 @@ using Amazon.SQS.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using Testcontainers.LocalStack;
+using Testcontainers.Redis;
 using Xunit;
 
 public class LocalStackFixture : IAsyncLifetime
 {
-    private readonly LocalStackContainer _localStackContainer =
-        new LocalStackBuilder("localstack/localstack:latest").Build();
+    private readonly LocalStackContainer _localStackContainer = new LocalStackBuilder("localstack/localstack:latest").Build();
 
     public string StateMachineArn { get; private set; } = null!;
     public IAmazonDynamoDB DynamoDb { get; private set; } = null!;

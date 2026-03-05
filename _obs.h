@@ -1,3 +1,7 @@
+1. Só cancelar tickets NÃO confirmados
+2. Só reservar tickets NÃO confirmados (e não reservados)
+3. Só confirmar tickets reservados
+
 x Renomear "seat" >> "ticket"
 
 x Testes
@@ -6,7 +10,7 @@ x Combo select evento
 
 x Confirmação pgto
 
-- Redis
+x Redis
 
 - Log
 
