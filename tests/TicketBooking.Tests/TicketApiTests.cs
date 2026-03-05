@@ -64,9 +64,8 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
     public async Task GetTickets_ShouldReturnTickets_WhenEventExists()
     {
         // Arrange:
-        const string eventId = "rock-in-rio-1985";
-
         await ResetDatabase();
+        const string eventId = "rock-in-rio-1985";
         await SeedDatabase(eventId);
 
         // Act:
@@ -86,6 +85,7 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
     public async Task ReserveTicket_ShouldReserveTicket()
     {
         // Arrange:
+        await ResetDatabase();
         const string eventId = "rock-in-rio";
         const string status = "Confirmed";
 
@@ -98,7 +98,6 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
             UpdatedAt = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
-        await ResetDatabase();
 
         // Act:
         var response = await _client.PostAsync(

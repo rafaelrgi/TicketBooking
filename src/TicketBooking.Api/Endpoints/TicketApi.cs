@@ -4,7 +4,9 @@ using Amazon.StepFunctions.Model;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Distributed;
 using TicketBooking.Api.Hubs;
+using TicketBooking.Application.Interfaces;
 
 namespace TicketBooking.Api.Endpoints;
 
@@ -29,15 +31,23 @@ public static class TicketApi
         return Results.Ok(eventIds);
     }
 
-    private static async Task<IResult> GetTickets(string eventId, ITicketRepository repository)
+    private static async Task<IResult> GetTickets(string eventId, ITicketRepository repository, ITicketCacheService cache)
     {
+        Console.WriteLine($">>> GetTickets: {eventId}");
+        // cache
+        var cachedData = await cache.GetEventCache(eventId);
+        if (!string.IsNullOrEmpty(cachedData))
+            return Results.Ok(JsonSerializer.Deserialize<List<Ticket>>(cachedData));
+
+        // db
+        Console.WriteLine($">>> CacheMiss: GetTickets {eventId}");
         var tickets = await repository.GetTickets(eventId);
+        await cache.SetEventCache(eventId, JsonSerializer.Serialize(tickets));
         return Results.Ok(tickets);
     }
 
     private static async Task<IResult> ConfirmTicket(ConfirmationRequest request,
-        ITicketRepository repository,
-        IHubContext<TicketHub>? hubContext)
+        ITicketRepository repository, IHubContext<TicketHub>? hubContext, ITicketCacheService cache)
     {
         var ticket = new Ticket
         {
@@ -49,6 +59,7 @@ public static class TicketApi
         };
 
         var success = await repository.ConfirmTicket(ticket);
+        await cache.InvalidateEventCache(request.EventId);
 
         if (hubContext != null)
         {
@@ -62,9 +73,8 @@ public static class TicketApi
     }
 
     private static async Task<IResult> ReserveTicket(ReservationRequest request,
-        ITicketRepository repository,
-        IAmazonStepFunctions stepFunctions,
-        IHubContext<TicketHub>? hubContext)
+        ITicketRepository repository, IAmazonStepFunctions stepFunctions,
+        IHubContext<TicketHub>? hubContext, ITicketCacheService cache)
     {
         var ticket = new Ticket
         {
@@ -76,6 +86,7 @@ public static class TicketApi
         };
 
         var success = await repository.ReserveTicket(ticket);
+        await cache.InvalidateEventCache(request.EventId);
         var cancelFlow = await StartReservationFlow(stepFunctions, ticket);
 
         if (hubContext != null)

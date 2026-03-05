@@ -9,6 +9,12 @@
     <PackageReference Include="AWSSDK.DynamoDBv2" Version="4.0.15" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Microsoft.Extensions.Caching.Abstractions">
+      <HintPath>..\..\..\..\..\.nuget\packages\microsoft.extensions.caching.abstractions\9.0.13\lib\net9.0\Microsoft.Extensions.Caching.Abstractions.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

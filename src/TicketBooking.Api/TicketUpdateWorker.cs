@@ -2,7 +2,9 @@ using System.Text.Json;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Distributed;
 using TicketBooking.Api.Hubs;
+using TicketBooking.Application.Interfaces;
 using TicketBooking.Domain.Interfaces;
 
 namespace TicketBooking.Api;
@@ -11,14 +13,19 @@ public class TicketUpdateWorker : BackgroundService
 {
     private readonly IAmazonSQS _sqs;
     private readonly IHubContext<TicketHub> _hubContext;
+    private readonly ITicketCacheService _cache;
+
     private readonly IServiceScopeFactory _scopeFactory;
+
     //TODO: usar IAmazonSQS para buscar a URL pelo nome
     private const string QueueUrl = "http://localhost:4566/000000000000/TicketUpdatesQueue";
 
-    public TicketUpdateWorker(IAmazonSQS sqs, IHubContext<TicketHub> hubContext, IServiceScopeFactory scopeFactory)
+    public TicketUpdateWorker(IAmazonSQS sqs, IHubContext<TicketHub> hubContext, ITicketCacheService cache,
+        IServiceScopeFactory scopeFactory)
     {
         _sqs = sqs ?? throw new ArgumentNullException(nameof(sqs));
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
+        _cache = cache;
         _scopeFactory = scopeFactory;
     }
 
@@ -30,19 +37,20 @@ public class TicketUpdateWorker : BackgroundService
             var request = new ReceiveMessageRequest
             {
                 QueueUrl = QueueUrl,
-                WaitTimeSeconds = 15,
-                MaxNumberOfMessages = 1
+                MaxNumberOfMessages = 1,
+                WaitTimeSeconds = 20
             };
 
             try
             {
-                var response = await _sqs.ReceiveMessageAsync(request, stoppingToken);
-                if (response?.Messages != null && response.Messages.Count == 0) continue;
-
-                foreach (var message in response!.Messages!)
+                var response = await _sqs.ReceiveMessageAsync(request, CancellationToken.None);
+                if (response?.Messages != null && response.Messages.Count > 0)
                 {
-                    Console.WriteLine($">>> {message.Body}");
-                    await ProcessMessage(message, stoppingToken);
+                    foreach (var message in response!.Messages!)
+                    {
+                        Console.WriteLine($">>> {message.Body}");
+                        await ProcessMessage(message, stoppingToken);
+                    }
                 }
             }
             catch (Exception ex)
@@ -61,7 +69,7 @@ public class TicketUpdateWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var ticketRepository = scope.ServiceProvider.GetRequiredService<ITicketRepository>();
         await _hubContext.Clients.All.SendAsync("TicketUpdated", eventId, stoppingToken);
-
+        await _cache.InvalidateEventCache(eventId);
         await _sqs.DeleteMessageAsync(QueueUrl, message.ReceiptHandle, stoppingToken);
     }
 

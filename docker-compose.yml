@@ -3,12 +3,20 @@ services:
     container_name: ticket-booking-aws
     image: localstack/localstack:latest
     ports:
-      - "127.0.0.1:4566:4566"            # Gateway do LocalStack
-      - "127.0.0.1:4510-4559:4510-4559"  # Serviços externos
+      - "127.0.0.1:4566:4566"
+      - "127.0.0.1:4510-4559:4510-4559"
     environment:
       - SERVICES=dynamodb,sqs,stepfunctions,sts,iam
       - DEBUG=1
       - AWS_DEFAULT_REGION=us-east-1
     volumes:
-      - "./infra:/etc/localstack/init/ready.d" # Mapeia a pasta de scripts
+      - "./infra:/etc/localstack/init/ready.d"
       - "/var/run/docker.sock:/var/run/docker.sock"
+
+  redis:
+    container_name: ticket-booking-redis
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    # Optional: keep the cache if the container restart
+    command: redis-server --save 60 1 --loglevel warning

@@ -6,8 +6,18 @@ using TicketBooking.Api.Hubs;
 using TicketBooking.Domain.Interfaces;
 using TicketBooking.Infra.Repositories;
 using Amazon.SQS;
+using TicketBooking.Application.Interfaces;
+using TicketBooking.Infra.Caching;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Redis setup
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConnectionString;
+    options.InstanceName = "TicketBooking_";
+});
 
 //  Aws setup
 var awsOptions = builder.Configuration.GetAWSOptions();
@@ -62,6 +72,7 @@ builder.Services.AddHostedService<TicketUpdateWorker>();
 builder.Services.AddDefaultAWSOptions(awsOptions);
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddSingleton<ITicketCacheService, TicketCacheService>();
 builder.Services.AddScoped<ITicketRepository, DynamoDbTicketRepository>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

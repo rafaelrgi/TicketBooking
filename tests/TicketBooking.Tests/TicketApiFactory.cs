@@ -10,12 +10,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.LocalStack;
 using Microsoft.AspNetCore.SignalR.Client;
+using Testcontainers.Redis;
 
 namespace TicketBooking.Tests.Integration;
 
 public class TicketApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly LocalStackContainer _localStack = new LocalStackBuilder("localstack/localstack:latest").Build();
+
+    private readonly RedisContainer _redisCache = new RedisBuilder("redis:alpine").Build();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -41,12 +44,19 @@ public class TicketApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                     ["SqsSettings:QueueUrl"] = dynamicQueueUrl
                 });
             });
+
+            var redisConnectionString = _redisCache.GetConnectionString();
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConnectionString;
+            });
         });
     }
 
     public async ValueTask InitializeAsync()
     {
         await _localStack.StartAsync();
+        await _redisCache.StartAsync();
 
         var sqsClient = new AmazonSQSClient(
             new BasicAWSCredentials("test", "test"),
@@ -73,13 +83,15 @@ public class TicketApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public HubConnection CreateHubConnection()
     {
         var hubConnection = new HubConnectionBuilder()
-            .WithUrl("http://localhost/ticketHub", o =>
-            {
-                o.HttpMessageHandlerFactory = _ => Server.CreateHandler();
-            })
+            .WithUrl("http://localhost/ticketHub", o => { o.HttpMessageHandlerFactory = _ => Server.CreateHandler(); })
             .Build();
         return hubConnection;
     }
 
-    public new async Task DisposeAsync() => await _localStack.DisposeAsync();
+    public new async Task DisposeAsync()
+    {
+        await _redisCache.StopAsync();
+        await _redisCache.DisposeAsync();
+        await _localStack.DisposeAsync();
+    }
 }
