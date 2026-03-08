@@ -1,11 +1,44 @@
+x Renomear "seat" >> "ticket"
+
+x Testes
+
+x Combo select evento
+
+x Confirmação pgto
+
+x Redis
+
+x Só salvar tickets reservados ou confirmados, disponiveis controlar pela tabela Events
+
+- Regras de negócio:
+  x Só cancelar tickets não confirmados
+  x Não reservar tickets acima da quota
+  x Não reservar tickets se evento não existe
+  x Só confirmar tickets reservados
+  x Só reservar tickets não confirmados e não reservados
+
+- Log
+
+- API Gateway
+
+- CloudWatch
+
+- EventBridge
+
+- SNS
+
+- Readme
+
+- Url's em config
+
+- Grafana ?
+
 ------------------------------------------------------------------------------------------------------------------------
 
 http://localhost:5025
 
-// Rodar Api  no Terminal
+// Rodar no Terminal
 dotnet run --project src/TicketBooking.Api/TicketBooking.Api.csproj --launch-profile http
-
-// Rodar Admin  no Terminal
 dotnet run --project src/TicketBooking.Admin/TicketBooking.Admin.csproj
 
 // Rodar script setup no container
@@ -13,18 +46,20 @@ docker exec -it ticket-booking-aws bash /etc/localstack/init/ready.d/setup-aws.s
 
 // View table
 docker exec -it ticket-booking-aws awslocal dynamodb scan --table-name Tickets
+docker exec -it ticket-booking-aws awslocal dynamodb scan --table-name Events
 
 // Delete table
 docker exec -it ticket-booking-aws awslocal dynamodb delete-table --table-name Tickets
 
 // Delete State Machine
-docker exec -it ticket-booking-aws awslocal stepfunctions delete-state-machine --state-machine-arn "arn:aws:states:us-east-1:000000000000:stateMachine:TicketBookingWorkflow"
+docker exec -it ticket-booking-aws awslocal stepfunctions delete-state-machine --state-machine-arn "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow"
 
 // Log LocalStack
 docker logs -f ticket-booking-aws
 
-// Listar todas as execuções da State Machine:
-docker exec -it ticket-booking-aws awslocal stepfunctions list-executions --state-machine-arn "arn:aws:states:us-east-1:000000000000:stateMachine:TicketBookingWorkflow"
+// Investigar erros State Machine:
+docker exec -it ticket-booking-aws awslocal stepfunctions list-executions --state-machine-arn "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow"
+docker exec -it ticket-booking-aws awslocal stepfunctions get-execution-history --execution-arn <ARN RETORNADO ACIMA>
 
 // Ver Status de uma Execução Específica
 docker exec -it ticket-booking-aws awslocal stepfunctions describe-execution --execution-arn "COLE_AQUI_O_ARN_RETORNADO"

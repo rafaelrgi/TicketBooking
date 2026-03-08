@@ -1,11 +1,21 @@
 #!/bin/bash
 
-# Create table
+# Create tables
+awslocal dynamodb create-table \
+    --table-name Events \
+    --attribute-definitions AttributeName=PK,AttributeType=S \
+    --key-schema AttributeName=PK,KeyType=HASH \
+    --billing-mode PAY_PER_REQUEST  || true
+    # PK: Event#id | SK: Metadata
+    # Attributes: EventId, TotalTickets
+
 awslocal dynamodb create-table \
     --table-name Tickets \
     --attribute-definitions AttributeName=PK,AttributeType=S AttributeName=SK,AttributeType=S \
     --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
-    --billing-mode PAY_PER_REQUEST || true
+    --billing-mode PAY_PER_REQUEST  || true
+    # PK: Event#id | Ticket#id
+    # Attributes: Status (Reserved/Confirmed), UserId, IsVip
 
 # Create SQS Queue 
 awslocal sqs create-queue --queue-name TicketUpdatesQueue || true
@@ -24,24 +34,20 @@ DEFINITION='{
     },
     "CancelReservation": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::dynamodb:updateItem",
-      "ResultPath": "$.updateResult",
+      "Resource": "arn:aws:states:::dynamodb:deleteItem",
       "Parameters": {
         "TableName": "Tickets",
         "Key": {
           "PK": { "S.$": "$.PK" },
           "SK": { "S.$": "$.SK" }
         },
-        "UpdateExpression": "SET #s = :available, UserId = :empty, UpdatedAt = :now",
         "ConditionExpression": "#s <> :confirmed",
         "ExpressionAttributeNames": { "#s": "Status" },
         "ExpressionAttributeValues": {
-          ":available": { "S": "Available" },
-          ":confirmed": { "S": "Confirmed" },
-          ":empty": { "S": "" },
-          ":now": { "S.$": "$$.State.EnteredTime" }
+          ":confirmed": { "S": "Confirmed" }
         }
       },
+      "ResultPath": "$.deleteResult",
       "Catch": [
         {
           "ErrorEquals": ["DynamoDb.ConditionalCheckFailedException"],
@@ -52,12 +58,20 @@ DEFINITION='{
     },
     "IgnoreCancellation": {
       "Type": "Pass",
-      "Result": "Ticket was already confirmed, skipping cancellation.",
+      "Result": "Ticket was already confirmed, keeping it in table.",
       "End": true
     },
     "NotifyQueue": {
       "Type": "Task",
       "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Retry": [
+          {
+            "ErrorEquals": ["States.ALL"],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 3,
+            "BackoffRate": 2.0
+          }
+        ],
       "Parameters": {
         "QueueUrl": "http://sqs.sa-east-1.localhost.localstack.cloud:4566/000000000000/TicketUpdatesQueue",
         "MessageBody": {

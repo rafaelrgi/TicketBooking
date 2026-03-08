@@ -1,52 +1,94 @@
 ### Variáveis
-@url = http://localhost:5070/api/tickets
+@tickets = http://localhost:5070/api/tickets
+@events = http://localhost:5070/api/events
 
-###
-POST {{url}}/confirm
+### Create event 1
+PUT {{events}}
 Content-Type: application/json
 
 {
-  "eventId": "rock-in-rio",
-  "ticketId": "A1-VIP",
-  "userId": "not-a-user"
+  "eventId": "Rock In Rio",
+  "totalTickets": "128"
+}
+### Create event 2
+PUT {{events}}
+Content-Type: application/json
+
+{
+  "eventId": "Woodstock",
+  "totalTickets": "256"
 }
 
+
 ###
-POST {{url}}/reserve
+POST {{tickets}}/reserve
 Content-Type: application/json
 
 {
-    "eventId": "rock-in-rio",
-    "ticketId": "A1-VIP",
+    "eventId": "Rock In Rio",
+    "ticketId": "2",
+    "isVip": true,
     "userId": "not-a-user"
 }
 
 ###
-POST {{url}}/reserve
+POST {{tickets}}/confirm
 Content-Type: application/json
 
 {
-  "eventId": "rock-in-rio",
-  "ticketId": "B52-GA",
+  "eventId": "Rock In Rio",
+  "ticketId": "2"
+}
+
+###
+POST {{tickets}}/reserve
+Content-Type: application/json
+
+{
+  "eventId": "Rock In Rio",
+  "ticketId": "16",
+  "isVip": false,
   "userId": "not-a-user"
 }
 
 ###
-POST {{url}}/reserve
+POST {{tickets}}/confirm
 Content-Type: application/json
 
 {
-    "eventId": "rock-in-rio",
-    "ticketId": "X42-GA",
-    "userId": "not-a-user"
+  "eventId": "Rock In Rio",
+  "ticketId": "16"
 }
 
 ###
-POST {{url}}/reserve
+POST {{tickets}}/reserve
 Content-Type: application/json
 
 {
-  "eventId": "woodstock",
-  "ticketId": "A1-VIP",
+  "eventId": "Rock In Rio",
+  "ticketId": "32",
+  "isVip": false,
+  "userId": "not-a-user"
+}
+
+###
+POST {{tickets}}/reserve
+Content-Type: application/json
+
+{
+  "eventId": "Rock In Rio",
+  "ticketId": "64",
+  "isVip": false,
+  "userId": "not-a-user"
+}
+
+###
+POST {{tickets}}/reserve
+Content-Type: application/json
+
+{
+  "eventId": "Woodstock",
+  "ticketId": "32",
+  "isVip": true,
   "userId": "not-a-user"
 }

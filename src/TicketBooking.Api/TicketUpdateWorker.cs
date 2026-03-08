@@ -66,10 +66,10 @@ public class TicketUpdateWorker : BackgroundService
         var eventId = GetEventIdFromJson(message.Body);
         var ticketId = GetTicketIdFromJson(message.Body);
 
+        await _cache.InvalidateEventCache(eventId);
         using var scope = _scopeFactory.CreateScope();
         var ticketRepository = scope.ServiceProvider.GetRequiredService<ITicketRepository>();
         await _hubContext.Clients.All.SendAsync("TicketUpdated", eventId, stoppingToken);
-        await _cache.InvalidateEventCache(eventId);
         await _sqs.DeleteMessageAsync(QueueUrl, message.ReceiptHandle, stoppingToken);
     }
 
@@ -80,6 +80,7 @@ public class TicketUpdateWorker : BackgroundService
         return pk.Replace("EVENT#", "");
     }
 
+    //TODO: int?
     public static string GetTicketIdFromJson(string json)
     {
         using var doc = JsonDocument.Parse(json);

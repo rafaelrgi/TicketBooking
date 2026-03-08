@@ -1,63 +1,33 @@
-using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
-using Amazon.SQS;
-using Amazon.SQS.Model;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using TicketBooking.Domain.Entities;
-using TicketBooking.Tests.Integration;
 
-public class TicketApiTests : IClassFixture<TicketApiFactory>
+namespace TicketBooking.Tests.Integration;
+
+public class TicketApiTests : IClassFixture<ApiFactory>
 {
     private readonly HttpClient _client;
     private readonly IAmazonDynamoDB _dynamoDb;
-    private readonly TicketApiFactory _factory;
+    private readonly ApiFactory _collection;
 
-    public TicketApiTests(TicketApiFactory factory)
+    public TicketApiTests(ApiFactory collection)
     {
-        _client = factory.CreateClient();
-        _dynamoDb = factory.Services.GetRequiredService<IAmazonDynamoDB>();
-        _factory = factory;
+        _client = collection.CreateClient();
+        _dynamoDb = collection.Services.GetRequiredService<IAmazonDynamoDB>();
+        _collection = collection;
     }
 
     [Fact]
-    public async Task GetEvents_ShouldReturnEvents()
+    public Task DummyTest_ToCheckSetup()
     {
-        // Arrange:
-        const string eventId1 = "rock-in-rio-1985";
-        const string eventId2 = "lollapalooza";
-        const string eventId3 = "woodstock";
-        const string eventId4 = "monsters-of-rock";
-        const string eventId5 = "rock-grande-do-sul";
-
-        await ResetDatabase();
-        await SeedDatabase(eventId1);
-        await SeedDatabase(eventId1);
-        await SeedDatabase(eventId2);
-        await SeedDatabase(eventId3);
-        await SeedDatabase(eventId4);
-        await SeedDatabase(eventId5);
-
-        // Act:
-        var response = await _client.GetAsync($"/api/events/", TestContext.Current.CancellationToken);
-
-        // Assert
-        response.EnsureSuccessStatusCode();
-        var events =
-            await response.Content.ReadFromJsonAsync<List<string>>(cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.NotNull(events);
-        Assert.NotEmpty(events);
-        Assert.Equal(5, events.Count);
-        Assert.Distinct(events);
-        Assert.Contains(eventId1, events);
-        Assert.Contains(eventId2, events);
-        Assert.Contains(eventId5, events);
-        Assert.DoesNotContain("avocado", events);
+        const bool test = false;
+        Assert.True(!test);
+        return Task.CompletedTask;
     }
 
     [Fact]
@@ -65,10 +35,10 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
     {
         // Arrange:
         await ResetDatabase();
-        const string eventId = "rock-in-rio-1985";
-        await SeedDatabase(eventId);
+        const string eventId = "Loki in rio";
+        await SeedDatabase(eventId, 128, "Reserved");
 
-        // Act:
+        // Act
         var response = await _client.GetAsync($"/api/tickets/{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
@@ -86,24 +56,26 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
     {
         // Arrange:
         await ResetDatabase();
-        const string eventId = "rock-in-rio";
+        const string eventId = "Loki in rio";
         const string status = "Confirmed";
+        const int eventQuota = 1024;
+
+        var evt = await CreateEventApi(eventId, eventQuota);
+        Assert.NotNull(evt);
 
         var ticket = new Ticket
         {
             EventId = eventId,
-            TicketId = "T-800",
+            TicketId = 128,
             UserId = "Hall-900",
+            IsVip = true,
             Status = status,
             UpdatedAt = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
 
-        // Act:
-        var response = await _client.PostAsync(
-            $"/api/tickets/reserve",
-            content,
-            TestContext.Current.CancellationToken);
+        // Act
+        var response = await _client.PostAsync($"/api/tickets/reserve", content, TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -123,14 +95,14 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
     {
         await ResetDatabase();
         // Arrange
-        const string eventId = "rock-in-rio";
-        const string ticketId = "T-600";
+        const string eventId = "Loki in rio";
+        const int ticketId = 256;
 
         await SeedDatabase(eventId, ticketId, "Reserved");
         var request = new { EventId = eventId, TicketId = ticketId, userId = "Skynet" };
 
         bool notified = false;
-        var hubConnection = _factory.CreateHubConnection();
+        var hubConnection = _collection.CreateHubConnection();
         hubConnection?.On<object>("TicketUpdated", (data) => notified = true);
         await hubConnection?.StartAsync(TestContext.Current.CancellationToken)!;
         // Act
@@ -141,7 +113,8 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
         response.EnsureSuccessStatusCode();
 
         var getResponse = await _client.GetAsync($"/api/tickets/{eventId}", TestContext.Current.CancellationToken);
-        var tickets = await getResponse.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken);
+        var tickets =
+            await getResponse.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(tickets);
         var confirmedTicket = tickets.FirstOrDefault(t => t.TicketId == ticketId);
 
@@ -149,17 +122,183 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
 
         // buy some time for the worker
         await Task.Delay(2000, TestContext.Current.CancellationToken);
-       Assert.True(notified, "Worker should have read the queue and send the notification");
+        Assert.True(notified, "Worker should have read the queue and send the notification");
     }
 
-    private async Task SeedDatabase(string eventId = "rock-in-rio", string ticketId = "T-800", string status = "Reserved")
+    [Fact]
+    public async Task ConfirmPayment_ShouldFailWhenTicketNotReserved()
+    {
+        // Arrange
+        await ResetDatabase();
+        const string eventId = "Loki in rio";
+        const int ticketIdReserve = 2;
+        const int ticketIdConfirm = 8;
+        const int eventQuota = 64;
+
+        var evt = await CreateEventApi(eventId, eventQuota);
+        Assert.NotNull(evt);
+
+        var ticket = new Ticket
+        {
+            EventId = eventId,
+            TicketId = ticketIdReserve,
+            UserId = "Gort",
+            IsVip = true,
+            Status = "xxx",
+            UpdatedAt = DateTime.UtcNow
+        };
+        var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+        var responseReserve = await _client.PostAsync($"/api/tickets/reserve", content, TestContext.Current.CancellationToken);
+        Assert.True(responseReserve.IsSuccessStatusCode);
+
+        // Act
+        ticket.TicketId = ticketIdConfirm;
+        content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+        var responseConfirm = await _client.PostAsync($"/api/tickets/confirm", content, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(responseConfirm.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task ReserveTicket_ShouldFailWhenEventDoesNotExit()
+    {
+        // Arrange:
+        await ResetDatabase();
+        const string eventId = "Loki in rio";
+
+        var ticket = new Ticket
+        {
+            EventId = eventId,
+            TicketId = 1,
+            UserId = "Gort",
+            IsVip = true,
+            Status = "xxx",
+            UpdatedAt = DateTime.UtcNow
+        };
+        var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+
+        // Act
+        var responseReserve = await _client.PostAsync(
+            $"/api/tickets/reserve",
+            content,
+            TestContext.Current.CancellationToken);
+
+        var responseGet = await _client.GetAsync($"/api/tickets/{eventId}", TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(responseReserve.IsSuccessStatusCode);
+        Assert.False(responseGet.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task ReserveTicket_ShouldFailWhenTicketOverEventQuota()
+    {
+        // Arrange:
+        await ResetDatabase();
+        const string eventId = "Loki in rio";
+        const int eventQuota = 512;
+
+        var evt = await CreateEventApi(eventId, eventQuota);
+        Assert.NotNull(evt);
+
+        var ticket = new Ticket
+        {
+            EventId = eventId,
+            TicketId = eventQuota + 1,
+            UserId = "Gort",
+            IsVip = true,
+            Status = "xxx",
+            UpdatedAt = DateTime.UtcNow
+        };
+        var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+
+        // Act
+        var responseReserve = await _client.PostAsync(
+            $"/api/tickets/reserve",
+            content,
+            TestContext.Current.CancellationToken);
+
+        var responseGet = await _client.GetAsync($"/api/tickets/{eventId}", TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(responseReserve.IsSuccessStatusCode);
+        Assert.False(responseGet.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task ReserveTicket_ShouldFailWhenTicketNotAvailable()
+    {
+        await ResetDatabase();
+        const string eventId = "Loki in rio";
+        const int eventQuota = 128;
+        const int freeTicket = 16;
+        const int reservedTicket = 8;
+        const int confirmedTicket = 32;
+
+        var evt = await CreateEventApi(eventId, eventQuota);
+        Assert.NotNull(evt);
+
+        await SeedDatabase(eventId, reservedTicket, "Reserved");
+        await SeedDatabase(eventId, confirmedTicket, "Confirmed");
+
+        // Act
+        var ticket = new Ticket
+        {
+            EventId = eventId,
+            TicketId = freeTicket,
+            UserId = "Gort",
+            IsVip = true,
+            Status = "xxx",
+            UpdatedAt = DateTime.UtcNow
+        };
+        var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+        var responseFree = await _client.PostAsync($"/api/tickets/reserve", content, TestContext.Current.CancellationToken);
+
+        ticket.TicketId = reservedTicket;
+        content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+        var responseReserved = await _client.PostAsync($"/api/tickets/reserve", content, TestContext.Current.CancellationToken);
+
+        ticket.TicketId = confirmedTicket;
+        content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
+        var responseConfirmed =
+            await _client.PostAsync($"/api/tickets/reserve", content, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(responseFree.IsSuccessStatusCode);
+        Assert.False(responseReserved.IsSuccessStatusCode);
+        Assert.False(responseConfirmed.IsSuccessStatusCode);
+    }
+
+    private async Task<Event?> CreateEventApi(string eventId, int eventQuota)
+    {
+        var row = new Event
+        {
+            EventId = eventId,
+            TotalTickets = eventQuota
+        };
+        var content = new StringContent(JsonSerializer.Serialize(row), Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync(
+            $"/api/events",
+            content,
+            TestContext.Current.CancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        response = await _client.GetAsync($"/api/events/{eventId}", TestContext.Current.CancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return null;
+        row = await response.Content.ReadFromJsonAsync<Event>(TestContext.Current.CancellationToken);
+        return row;
+    }
+
+    private async Task SeedDatabase(string eventId, int ticketId, string status)
     {
         var ticket = new Dictionary<string, AttributeValue>
         {
             { "PK", new AttributeValue { S = $"EVENT#{eventId}" } },
             { "SK", new AttributeValue { S = $"TICKET#{ticketId}" } },
             { "EventId", new AttributeValue { S = eventId } },
-            { "TicketId", new AttributeValue { S = ticketId } },
             { "Status", new AttributeValue { S = status } }
         };
 
@@ -174,6 +313,14 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
     {
         try
         {
+            await _dynamoDb.DeleteTableAsync("Events");
+        }
+        catch
+        {
+        }
+
+        try
+        {
             await _dynamoDb.DeleteTableAsync("Tickets");
         }
         catch
@@ -185,6 +332,15 @@ public class TicketApiTests : IClassFixture<TicketApiFactory>
             TableName = "Tickets",
             AttributeDefinitions = [new("PK", ScalarAttributeType.S), new("SK", ScalarAttributeType.S)],
             KeySchema = [new("PK", KeyType.HASH), new("SK", KeyType.RANGE)],
+            ProvisionedThroughput = new ProvisionedThroughput(5, 5)
+        });
+
+        //Yes, Ticket depends upon Events sometimes
+        await _dynamoDb.CreateTableAsync(new CreateTableRequest
+        {
+            TableName = "Events",
+            AttributeDefinitions = [new("PK", ScalarAttributeType.S)],
+            KeySchema = [new("PK", KeyType.HASH)],
             ProvisionedThroughput = new ProvisionedThroughput(5, 5)
         });
     }

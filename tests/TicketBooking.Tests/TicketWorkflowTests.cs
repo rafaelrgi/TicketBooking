@@ -46,8 +46,8 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     }
 
     [Theory]
-    [InlineData("{\"PK\": \"EVENT#rock-in-rio\", \"SK\": \"TICKET#A1\"}", "A1")]
-    [InlineData("{\"PK\": \"EVENT#woodstock\", \"SK\": \"TICKET#X-666-LONG_NAME\"}", "X-666-LONG_NAME")]
+    [InlineData("{\"PK\": \"EVENT#rock-in-rio\", \"SK\": \"TICKET#256\"}", "256")]
+    [InlineData("{\"PK\": \"EVENT#woodstock\", \"SK\": \"TICKET#666\"}", "666")]
     [InlineData("{\"PK\": \"EVENT#rock-n-roll-circus\", \"SK\": \"TICKET#\"}", "")]
     public void Worker_ShouldExtractCorrectTicketId(string jsonInput, string expectedEventId)
     {
@@ -102,8 +102,8 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     {
         // Arrange
         const string eventId = "rock-in-rio-1985";
-        const string ticketId = "X1";
-        const string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\"}}";
+        const int ticketId = 16;
+        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"{ticketId}\"}}";
         const string handleMock = "fake-handle-123";
         var message = new Message
         {
@@ -174,7 +174,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     {
         // Arrange
         const string eventId = "monsters-of-rock";
-        const string ticketId = "TICKET#123";
+        const int ticketId = 64;
         const string badJson = "{ \"PK\": \"EVENT#broken-json... wait, where is the rest? Thanos snap!!!";
         const string handleMock = "fake-handle-123";
         var message = new Message
@@ -226,8 +226,8 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     {
         // Arrange
         const string eventId = "monsters-of-rock";
-        const string ticketId = "123";
-        const string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\"}}";
+        const int ticketId = 512;
+        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\"}}";
         const string handleMock = "fake-handle-123";
         var message = new Message
         {
@@ -271,9 +271,6 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
 
     private async Task ResetDatabase()
     {
-        //var client = Services.GetRequiredService<IAmazonDynamoDB>();
-
-        // Deleta se existir (para não dar erro na primeira vez)
         try
         {
             await _fixture.DynamoDb.DeleteTableAsync("Tickets");
@@ -282,7 +279,6 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         {
         }
 
-        // Recria a tabela do zero
         await _fixture.DynamoDb.CreateTableAsync(new CreateTableRequest
         {
             TableName = "Tickets",
