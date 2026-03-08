@@ -94,10 +94,7 @@ else
         Console.WriteLine(">>> On InitializedAsync");
 
         //initial loading
-        _loading = true;
-        await GetEvents();
-        await GetTickets();
-        _loading = false;
+        await LoadData();
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl("http://localhost:5070/tickethub")
@@ -110,10 +107,7 @@ else
             string eventId = data?.ToString() ?? string.Empty;
             if (eventId == _selectedEvent)
             {
-                _loading = true;
-                await GetTickets();
-                _loading = false;
-                await InvokeAsync(StateHasChanged);
+                await LoadData(false, true);
             }
         });
 
@@ -127,22 +121,48 @@ else
         }
     }
 
-    private void UpdateChartData()
+    private async Task LoadData(bool events = true, bool tickets = true)
     {
-        if (_tickets == null) return;
+        _loading = true;
+        try
+        {
+            if (events)
+                await GetEvents();
+            if (tickets)
+            {
+                await GetTickets();
+                await GetChartData();
+            }
+        }
+        catch (Exception ex)
+        {
+            //TODO: log
+            Console.WriteLine($"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
 
-        int vip = _tickets.Count(s => s.TicketId.Contains("VIP", StringComparison.OrdinalIgnoreCase));
-        int normal = _tickets.Count(s => !s.TicketId.Contains("VIP", StringComparison.OrdinalIgnoreCase));
+    private async Task GetChartData()
+    {
+        if (_tickets == null || _selectedEvent == null) return;
+
+        //TODO: url in config
+        _eventStats = await Http.GetFromJsonAsync<EventStats>($"http://localhost:5070/api/events/stats/{_selectedEvent}");
+        if (_eventStats == null)
+            _eventStats = new EventStats("", 0, 0, 0, 0);
+
+        int vip = _tickets.Count(t => t.IsVip);
+        int normal = _tickets.Count(t => !t.IsVip);
 
         _chartTypeData = [(double)vip, (double)normal];
         _chartTypeLabels = [$"Vip {vip} ", $"GA {normal} "];
 
-        int reserved = _tickets.Count(s => s.Status == "Reserved");
-        int availabe = _tickets.Count(s => s.Status == "Available");
-        int confirmed = _tickets.Count(s => s.Status == "Confirmed");
-
-        _chartStatusData = [(double)reserved, (double)availabe, (double)confirmed];
-        _chartStatusLabels = [$"Reserved {reserved} ", $"Available {availabe} ", $"Confirmed {confirmed} "];
+        _chartStatusData = [(double)_eventStats.Confirmed, (double)_eventStats.Reserved, (double)_eventStats.Available];
+        _chartStatusLabels = [$"Confirmed {_eventStats.Confirmed} ", $"Reserved {_eventStats.Reserved} ", $"Available {_eventStats.Available} "];
     }
 
     private async Task GetEvents()
@@ -163,27 +183,25 @@ else
     private async Task GetTickets()
     {
         _tickets = [];
-        if (!string.IsNullOrEmpty(_selectedEvent))
-        {
-            try
-            {
-                //TODO: url in config
-                var data = await Http.GetFromJsonAsync<List<Ticket>>($"http://localhost:5070/api/tickets/{_selectedEvent}");
-                if (data != null) _tickets = data;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Erro ao buscar assentos: {ex.Message}");
-            }
-        }
 
-        UpdateChartData();
+        if (_selectedEvent == null) return;
+
+        try
+        {
+            //TODO: url in config
+            var data = await Http.GetFromJsonAsync<List<Ticket>>($"http://localhost:5070/api/tickets/{_selectedEvent}");
+            if (data != null) _tickets = data;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao buscar assentos: {ex.Message}");
+        }
     }
 
     private async Task OnEventSelected(ChangeEventArgs e)
     {
         _selectedEvent = e.Value?.ToString();
-        await GetTickets();
+        await LoadData(false, true);
     }
 
     public async ValueTask DisposeAsync()
@@ -205,6 +223,7 @@ else
     private HubConnection? _hubConnection;
     private List<Ticket>? _tickets;
     private List<string> _events = [];
+    private EventStats? _eventStats;
     private string? _selectedEvent;
     private bool _loading = true;
 
@@ -213,6 +232,6 @@ else
     private readonly string[] _chartTypeColors = ["#FFD700", "#771cff"];
 
     private double[] _chartStatusData = [0, 0, 0];
-    private string[] _chartStatusLabels = ["Reserved", "Available", "Confirmed"];
-    private readonly string[] _chartStatusColors = ["#ffa200", "#2196F3", "#00C853"];
+    private string[] _chartStatusLabels = ["Confirmed", "Reserved", "Available"];
+    private readonly string[] _chartStatusColors = ["#00C853", "#ffa200", "#2196F3"];
 }

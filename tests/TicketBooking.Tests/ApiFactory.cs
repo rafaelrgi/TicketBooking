@@ -4,17 +4,17 @@ using Amazon.Runtime;
 using Amazon.SQS;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.LocalStack;
-using Microsoft.AspNetCore.SignalR.Client;
 using Testcontainers.Redis;
 
 namespace TicketBooking.Tests.Integration;
 
-public class TicketApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly LocalStackContainer _localStack = new LocalStackBuilder("localstack/localstack:latest").Build();
 

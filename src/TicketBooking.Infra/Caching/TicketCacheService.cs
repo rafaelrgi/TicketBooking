@@ -57,7 +57,7 @@ public class TicketCacheService : ITicketCacheService
         }
     }
 
-    private string GetKey(string eventId)
+    private static string GetKey(string eventId)
     {
         return $"{Prefix}{eventId}";
     }

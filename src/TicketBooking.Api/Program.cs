@@ -73,6 +73,7 @@ builder.Services.AddDefaultAWSOptions(awsOptions);
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddSingleton<ITicketCacheService, TicketCacheService>();
+builder.Services.AddScoped<IEventRepository, DynamoDbEventRepository>();
 builder.Services.AddScoped<ITicketRepository, DynamoDbTicketRepository>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -106,6 +107,7 @@ app.UseCors();
 
 app.UseWebSockets();
 app.MapHub<TicketHub>("/tickethub");
+app.MapEventEndpoints();
 app.MapTicketEndpoints();
 
 app.Run();

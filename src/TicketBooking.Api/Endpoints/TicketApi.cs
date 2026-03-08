@@ -1,17 +1,19 @@
 using System.Text.Json;
+using Amazon.SQS;
+using Amazon.SQS.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
-using Microsoft.AspNetCore.SignalR;
-using TicketBooking.Api.Hubs;
 using TicketBooking.Application.Interfaces;
 
 namespace TicketBooking.Api.Endpoints;
 
-public record ReservationRequest(string EventId, string TicketId, string UserId);
+//TODO: Dto
+public record ReservationRequest(string EventId, int TicketId, bool IsVip, string UserId);
 
-public record ConfirmationRequest(string EventId, string TicketId, string UserId);
+//TODO: Dto
+public record ConfirmationRequest(string EventId, int TicketId, string UserId);
 
 public static class TicketApi
 {
@@ -20,14 +22,6 @@ public static class TicketApi
         app.MapPost("/api/tickets/reserve", ReserveTicket);
         app.MapPost("/api/tickets/confirm", ConfirmTicket);
         app.MapGet("/api/tickets/{eventId}", GetTickets);
-
-        app.MapGet("/api/events", GetEventIds);
-    }
-
-    private static async Task<IResult> GetEventIds(ITicketRepository repository)
-    {
-        var eventIds = await repository.GetEventIds();
-        return Results.Ok(eventIds);
     }
 
     private static async Task<IResult> GetTickets(string eventId, ITicketRepository repository, ITicketCacheService cache)
@@ -41,30 +35,24 @@ public static class TicketApi
         // db
         Console.WriteLine($">>> CacheMiss: GetTickets {eventId}");
         var tickets = await repository.GetTickets(eventId);
+        if (tickets.Count == 0)
+            return Results.NotFound();
         await cache.SetEventCache(eventId, JsonSerializer.Serialize(tickets));
         return Results.Ok(tickets);
     }
 
     private static async Task<IResult> ConfirmTicket(ConfirmationRequest request,
-        ITicketRepository repository, IHubContext<TicketHub>? hubContext, ITicketCacheService cache)
+        ITicketRepository repository, IAmazonSQS queue, ITicketCacheService cache)
     {
-        var ticket = new Ticket
-        {
-            EventId = request.EventId,
-            TicketId = request.TicketId,
-            UserId = request.UserId,
-            Status = "Confirmed",
-            UpdatedAt = DateTime.UtcNow
-        };
+        var ticket = await repository.GetTicket(request.EventId, request.TicketId);
+        if (ticket is not { Status: "Reserved" })
+            return Results.NotFound("Ticket not found");
 
+        ticket.Status = "Confirmed";
+        ticket.UpdatedAt = DateTime.UtcNow;
         var success = await repository.ConfirmTicket(ticket);
         await cache.InvalidateEventCache(request.EventId);
-
-        if (hubContext != null)
-        {
-            await hubContext.Clients.All.SendAsync("TicketUpdated", ticket.EventId);
-            Console.WriteLine(">>> Sinal enviado para o Hub");
-        }
+        await NotifyQueue(ticket, "Confirmed", queue);
 
         return success
             ? Results.Ok(new { message = "Confirmation saved" })
@@ -72,31 +60,54 @@ public static class TicketApi
     }
 
     private static async Task<IResult> ReserveTicket(ReservationRequest request,
-        ITicketRepository repository, IAmazonStepFunctions stepFunctions,
-        IHubContext<TicketHub>? hubContext, ITicketCacheService cache)
+        ITicketRepository repository, IEventRepository eventRepository,
+        IAmazonStepFunctions stepFunctions, IAmazonSQS queue, ITicketCacheService cache)
     {
+        var evt = await eventRepository.GetEvent(request.EventId);
+        if (evt is null)
+            return Results.BadRequest("Event invalid");
+        if (request.TicketId >= evt.TotalTickets)
+            return Results.BadRequest("Ticket invalid");
+
+        Console.WriteLine("----------------------------------------");
         var ticket = new Ticket
         {
             EventId = request.EventId,
             TicketId = request.TicketId,
             UserId = request.UserId,
             Status = "Reserved",
+            IsVip = request.IsVip,
             UpdatedAt = DateTime.UtcNow
         };
 
         var success = await repository.ReserveTicket(ticket);
         await cache.InvalidateEventCache(request.EventId);
+        await NotifyQueue(ticket, "Reserved", queue);
         var cancelFlow = await StartReservationFlow(stepFunctions, ticket);
-
-        if (hubContext != null)
-        {
-            await hubContext.Clients.All.SendAsync("TicketUpdated", ticket.EventId);
-            Console.WriteLine(">>> Sinal enviado para o Hub");
-        }
 
         return success
             ? Results.Ok(new { message = "Reservation saved" })
             : Results.BadRequest("Error saving Reservation");
+    }
+
+    private static async Task NotifyQueue(Ticket ticket, string status, IAmazonSQS queue)
+    {
+        //TODO: usar IAmazonSQS para buscar a URL pelo nome? config?
+        const string queueUrl = "http://localhost:4566/000000000000/TicketUpdatesQueue";
+        var message = new
+        {
+            PK = $"EVENT#{ticket.EventId}",
+            SK = $"TICKET#{ticket.TicketId}",
+            Status = status
+        };
+
+        await queue.SendMessageAsync(new SendMessageRequest
+        {
+            QueueUrl = queueUrl,
+            MessageBody = JsonSerializer.Serialize(message)
+        });
+
+        Console.WriteLine($">>> NotifyQueue: {ticket.EventId}.{ticket.TicketId} = {status}");
     }
 
 
