@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -12,13 +14,13 @@ public class EventApiTests : IClassFixture<ApiFactory>
 {
     private readonly HttpClient _client;
     private readonly IAmazonDynamoDB _dynamoDb;
-    private readonly ApiFactory _collection;
+    private readonly ApiFactory _factory;
 
-    public EventApiTests(ApiFactory collection)
+    public EventApiTests(ApiFactory factory)
     {
-        _client = collection.CreateClient();
-        _dynamoDb = collection.Services.GetRequiredService<IAmazonDynamoDB>();
-        _collection = collection;
+        _client = factory.CreateClient();
+        _dynamoDb = factory.Services.GetRequiredService<IAmazonDynamoDB>();
+        _factory = factory;
     }
 
     [Fact]
@@ -30,25 +32,125 @@ public class EventApiTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task GetEvent_ShouldReturn401WhenNotAuth()
+    {
+        // Arrange
+        await ResetDatabaseAndCache();
+        const string eventId = "Look in rio";
+        await SeedDatabase(eventId, 512);
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        // Act
+        var response = await _client.GetAsync($"/api/events/{eventId}");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetEvent_ShouldNotReturn401WhenAuth()
+    {
+        // Arrange
+        await ResetDatabaseAndCache();
+        const string eventId = "Lok in rio";
+        await SeedDatabase(eventId, 512);
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
+
+        // Act
+        var response = await _client.GetAsync($"/api/events/{eventId}");
+
+        // Assert
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task Request_ShouldReturn401_WhenTokenExpired()
+    {
+        // Arrange
+        await ResetDatabaseAndCache();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
+        client.DefaultRequestHeaders.Add("X-Test-Expired", "true");
+
+        // Act
+        var response = await client.GetAsync("/api/events");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SaveEvent_ShouldReturn200_WhenUserIsAdmin()
+    {
+        // Arrange
+        await ResetDatabaseAndCache();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
+        client.DefaultRequestHeaders.Add("X-Role", "Admin");
+        var content = JsonContent.Create(new { eventId = "Lóke In Rio", totalTickets = 512 });
+
+        // Act
+        var response = await client.PutAsync("/api/events", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SaveEvent_ShouldReturn403_WhenUserIsNotAdmin()
+    {
+        // Arrange
+        await ResetDatabaseAndCache();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
+        client.DefaultRequestHeaders.Add("X-Role", "User");
+        var content = JsonContent.Create(new { eventId = "Loky en Rio", totalTickets = 32 });
+
+        // Act
+        var response = await client.PutAsync("/api/events", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetEvents_ShouldReturnSuccess_WhenLoggedUserIsNotAdmin()
+    {
+        // Arrange
+        await ResetDatabaseAndCache();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
+        client.DefaultRequestHeaders.Add("X-Role", "User");
+
+        // Act
+        var response = await client.GetAsync("/api/events");
+
+        // Assert
+        Assert.True(response.IsSuccessStatusCode);
+    }
+
+    [Fact]
     public async Task GetEvents_ShouldReturnEvents()
     {
         // Arrange:
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
 
-        const string eventId1 = "rock-in-rio-1985";
+        const string eventId1 = "Lok in rio-1985";
         const string eventId2 = "lollapalooza";
         const string eventId3 = "woodstock";
         const string eventId4 = "monsters-of-rock";
         const string eventId5 = "rock-grande-do-sul";
 
-        await SeedDatabase(eventId1, 50000);
-        await SeedDatabase(eventId1, 1000);
-        await SeedDatabase(eventId2, 300000);
-        await SeedDatabase(eventId3, 1000);
-        await SeedDatabase(eventId4, 600);
-        await SeedDatabase(eventId5, 666);
+        await SeedDatabase(eventId1, 1024);
+        await SeedDatabase(eventId1, 256);
+        await SeedDatabase(eventId2, 4096);
+        await SeedDatabase(eventId3, 512);
+        await SeedDatabase(eventId4, 256);
+        await SeedDatabase(eventId5, 128);
 
         // Act:
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.GetAsync($"/api/events/", TestContext.Current.CancellationToken);
 
         // Assert
@@ -70,7 +172,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
     public async Task CreateEvent_ShouldCreateEvent()
     {
         // Arrange
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
 
         var evt = new Event
         {
@@ -80,6 +182,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         var content = new StringContent(JsonSerializer.Serialize(evt), Encoding.UTF8, "application/json");
 
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.PutAsync($"/api/events", content, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var row = await GetEventFromDb(evt.EventId);
@@ -93,7 +196,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
     public async Task GetDashboardStats_ShouldReturnCorrectMath()
     {
         // Arrange
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
 
         const string eventId = "Loki in rio";
         const int totalCapacity = 50000;
@@ -122,6 +225,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         }, TestContext.Current.CancellationToken);
 
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.GetAsync($"/api/events/stats/{eventId}", TestContext.Current.CancellationToken);
         var stats = await response.Content.ReadFromJsonAsync<EventStats>(TestContext.Current.CancellationToken);
 
@@ -174,8 +278,9 @@ public class EventApiTests : IClassFixture<ApiFactory>
         });
     }
 
-    private async Task ResetDatabase()
+    private async Task ResetDatabaseAndCache()
     {
+        await _factory.ClearCache();
         try
         {
             await _dynamoDb.DeleteTableAsync("Events");

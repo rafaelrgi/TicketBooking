@@ -13,6 +13,20 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./setup-aws.sh:/etc/localstack/init/ready.d/setup-aws.sh"
 
+  keycloak:
+    container_name: ticket-booking-auth
+    image: quay.io/keycloak/keycloak:26.1.0
+    volumes:
+      - ./keycloak-data:/opt/keycloak/data
+      - ./keycloak-theme:/opt/keycloak/themes/rgi:ro
+    command: start-dev
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+    ports:
+      - "8080:8080"
+
+
   redis:
     container_name: ticket-booking-redis
     image: redis:alpine

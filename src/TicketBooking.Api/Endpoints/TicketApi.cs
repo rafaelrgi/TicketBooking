@@ -17,15 +17,22 @@ public record ConfirmationRequest(string EventId, int TicketId, string UserId);
 
 public static class TicketApi
 {
-    public static void MapTicketEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapTicketEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/tickets/reserve", ReserveTicket);
-        app.MapPost("/api/tickets/confirm", ConfirmTicket);
-        app.MapGet("/api/tickets/{eventId}", GetTickets);
+        var api = app.MapGroup("/api/tickets");
+
+        api.MapPost("/reserve", ReserveTicket).RequireAuthorization();
+        api.MapPost("/confirm", ConfirmTicket).RequireAuthorization();
+        api.MapGet("/{eventId}", GetTickets).RequireAuthorization("RequireAdmin");
+
+        return app;
     }
 
-    private static async Task<IResult> GetTickets(string eventId, ITicketRepository repository, ITicketCacheService cache)
+    private static async Task<IResult> GetTickets(string eventId, HttpContext context, ITicketRepository repository, ITicketCacheService cache)
     {
+        var authHeader = context.Request.Headers["Authorization"].ToString();
+        Console.WriteLine($"Token recebido pela API: {authHeader}");
+
         Console.WriteLine($">>> GetTickets: {eventId}");
         // cache
         var cachedData = await cache.GetEventCache(eventId);

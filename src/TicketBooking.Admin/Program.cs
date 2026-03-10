@@ -3,25 +3,27 @@ using Amazon.Runtime;
 using Amazon.DynamoDBv2;
 using MudBlazor.Services;
 using TicketBooking.Admin.Components;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Keycloak.AuthServices.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using TicketBooking.Admin;
+using TicketBooking.Admin.Infra;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuth(builder.Configuration);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(options =>
     {
-        options.DetailedErrors = true; // Permite ver o erro real no log do servidor
+        options.DetailedErrors = true;
     });
 
 builder.Services.AddMudServices();
 
-var awsOptions = builder.Configuration.GetAWSOptions();
-if (builder.Environment.IsDevelopment())
-{
-    awsOptions.Credentials = new BasicAWSCredentials("test", "test");
-}
-builder.Services.AddDefaultAWSOptions(awsOptions);
-builder.Services.AddAWSService<IAmazonDynamoDB>();
 builder.Services.AddScoped(sp => new HttpClient
 {
     //TODO: config
@@ -43,7 +45,16 @@ app.UseWebSockets();
 app.UseStaticFiles();
 app.UseAntiforgery();
 
+app.UseHeaderPropagation();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapGet("/login", (string? returnUrl = "/") =>
+{
+    return Results.Challenge(new AuthenticationProperties { RedirectUri = returnUrl },
+        [OpenIdConnectDefaults.AuthenticationScheme]);
+});
 
 app.Run();

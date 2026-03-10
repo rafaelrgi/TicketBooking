@@ -14,13 +14,17 @@ public record CreateRequest(string EventId, int TotalTickets);
 
 public static class EventApi
 {
-    public static void MapEventEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapEventEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/events", GetEventIds);
-        app.MapGet("/api/events/{eventId}", GetEvent);
-        app.MapGet("/api/events/stats/{eventId}", GetStats);
+        var api = app.MapGroup("/api/events");
 
-        app.MapPut("/api/events", SaveEvent);
+        api.MapGet("/", GetEventIds).RequireAuthorization();
+        api.MapGet("/{eventId}", GetEvent).RequireAuthorization();
+        api.MapGet("/stats/{eventId}", GetStats).RequireAuthorization();
+
+        api.MapPut("/", SaveEvent).RequireAuthorization("RequireAdmin");
+
+        return app;
     }
 
     private static async Task<IResult> GetEvent(string eventId, IEventRepository repository)

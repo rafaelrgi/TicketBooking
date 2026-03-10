@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -13,13 +14,13 @@ public class TicketApiTests : IClassFixture<ApiFactory>
 {
     private readonly HttpClient _client;
     private readonly IAmazonDynamoDB _dynamoDb;
-    private readonly ApiFactory _collection;
+    private readonly ApiFactory _factory;
 
-    public TicketApiTests(ApiFactory collection)
+    public TicketApiTests(ApiFactory factory)
     {
-        _client = collection.CreateClient();
-        _dynamoDb = collection.Services.GetRequiredService<IAmazonDynamoDB>();
-        _collection = collection;
+        _client = factory.CreateClient();
+        _dynamoDb = factory.Services.GetRequiredService<IAmazonDynamoDB>();
+        _factory = factory;
     }
 
     [Fact]
@@ -34,11 +35,12 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     public async Task GetTickets_ShouldReturnTickets_WhenEventExists()
     {
         // Arrange:
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
         await SeedDatabase(eventId, 128, "Reserved");
 
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.GetAsync($"/api/tickets/{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
@@ -55,7 +57,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     public async Task ReserveTicket_ShouldReserveTicket()
     {
         // Arrange:
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
         const string status = "Confirmed";
         const int eventQuota = 1024;
@@ -75,6 +77,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
 
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.PostAsync($"/api/tickets/reserve", content, TestContext.Current.CancellationToken);
 
         // Assert
@@ -93,7 +96,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task ConfirmPayment_ShouldUpdateStatusAndNotify()
     {
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         // Arrange
         const string eventId = "Loki in rio";
         const int ticketId = 256;
@@ -102,10 +105,12 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         var request = new { EventId = eventId, TicketId = ticketId, userId = "Skynet" };
 
         bool notified = false;
-        var hubConnection = _collection.CreateHubConnection();
+        var hubConnection = _factory.CreateHubConnection();
         hubConnection?.On<object>("TicketUpdated", (data) => notified = true);
         await hubConnection?.StartAsync(TestContext.Current.CancellationToken)!;
+
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.PostAsJsonAsync("/api/tickets/confirm", request,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -129,7 +134,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     public async Task ConfirmPayment_ShouldFailWhenTicketNotReserved()
     {
         // Arrange
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
         const int ticketIdReserve = 2;
         const int ticketIdConfirm = 8;
@@ -164,7 +169,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     public async Task ReserveTicket_ShouldFailWhenEventDoesNotExit()
     {
         // Arrange:
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
 
         var ticket = new Ticket
@@ -179,6 +184,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
 
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var responseReserve = await _client.PostAsync(
             $"/api/tickets/reserve",
             content,
@@ -195,7 +201,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     public async Task ReserveTicket_ShouldFailWhenTicketOverEventQuota()
     {
         // Arrange:
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
         const int eventQuota = 512;
 
@@ -214,6 +220,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
 
         // Act
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var responseReserve = await _client.PostAsync(
             $"/api/tickets/reserve",
             content,
@@ -229,7 +236,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task ReserveTicket_ShouldFailWhenTicketNotAvailable()
     {
-        await ResetDatabase();
+        await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
         const int eventQuota = 128;
         const int freeTicket = 16;
@@ -278,6 +285,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             TotalTickets = eventQuota
         };
         var content = new StringContent(JsonSerializer.Serialize(row), Encoding.UTF8, "application/json");
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
         var response = await _client.PutAsync(
             $"/api/events",
             content,
@@ -309,39 +317,25 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         });
     }
 
-    private async Task ResetDatabase()
+    private async Task ResetDatabaseAndCache()
     {
-        try
-        {
-            await _dynamoDb.DeleteTableAsync("Events");
-        }
-        catch
-        {
-        }
+        await _factory.ClearCache();
+        await ClearTable("Tickets", "PK", "SK");
+        await ClearTable("Events", "PK");
+    }
 
-        try
-        {
-            await _dynamoDb.DeleteTableAsync("Tickets");
-        }
-        catch
-        {
-        }
+    private async Task ClearTable(string tableName, string partitionKey, string? sortKey = null)
+    {
+        var scan = await _dynamoDb.ScanAsync(new ScanRequest { TableName = tableName });
 
-        await _dynamoDb.CreateTableAsync(new CreateTableRequest
+        foreach (var item in scan.Items)
         {
-            TableName = "Tickets",
-            AttributeDefinitions = [new("PK", ScalarAttributeType.S), new("SK", ScalarAttributeType.S)],
-            KeySchema = [new("PK", KeyType.HASH), new("SK", KeyType.RANGE)],
-            ProvisionedThroughput = new ProvisionedThroughput(5, 5)
-        });
+            var key = new Dictionary<string, AttributeValue> {
+                { partitionKey, item[partitionKey] }
+            };
+            if (sortKey != null) key.Add(sortKey, item[sortKey]);
 
-        //Yes, Ticket depends upon Events sometimes
-        await _dynamoDb.CreateTableAsync(new CreateTableRequest
-        {
-            TableName = "Events",
-            AttributeDefinitions = [new("PK", ScalarAttributeType.S)],
-            KeySchema = [new("PK", KeyType.HASH)],
-            ProvisionedThroughput = new ProvisionedThroughput(5, 5)
-        });
+            await _dynamoDb.DeleteItemAsync(tableName, key);
+        }
     }
 }

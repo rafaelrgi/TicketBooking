@@ -10,6 +10,10 @@
     <PackageReference Include="AWSSDK.DynamoDBv2" Version="4.0.15" />
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.23" />
     <PackageReference Include="AWSSDK.StepFunctions" Version="4.0.2.10" />
+    <PackageReference Include="Keycloak.AuthServices.Authentication" Version="2.6.1" />
+    <PackageReference Include="Keycloak.AuthServices.Authorization" Version="2.6.1" />
+    <PackageReference Include="Keycloak.AuthServices.Sdk" Version="2.6.1" />
+    <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" Version="9.0.13" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.0" />
     <PackageReference Include="MudBlazor" Version="8.2.0" />
   </ItemGroup>

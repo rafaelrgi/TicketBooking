@@ -3,9 +3,11 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+.localstack/
 infra/infra/
 infra/scripts/
-.localstack/
+keycloak-data/
+keycloak-theme/
 
 # dotenv files
 .env

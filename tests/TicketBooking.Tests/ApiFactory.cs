@@ -2,6 +2,7 @@ using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime;
 using Amazon.SQS;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using StackExchange.Redis;
 using Testcontainers.LocalStack;
 using Testcontainers.Redis;
 
@@ -46,10 +48,19 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             });
 
             var redisConnectionString = _redisCache.GetConnectionString();
-            services.AddStackExchangeRedisCache(options =>
-            {
-                options.Configuration = redisConnectionString;
-            });
+            services.AddStackExchangeRedisCache(options => { options.Configuration = redisConnectionString; });
+
+            // Remove the real auth config
+            var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(AuthenticationOptions));
+            if (descriptor != null) services.Remove(descriptor);
+            // Add the mocked auth config
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = "TestScheme";
+                    options.DefaultChallengeScheme = "TestScheme";
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                    "TestScheme", options => { });
         });
     }
 
@@ -78,6 +89,15 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             },
             ProvisionedThroughput = new ProvisionedThroughput(5, 5)
         });
+
+        //Yes, Ticket depends upon Events sometimes
+        await client.CreateTableAsync(new CreateTableRequest
+        {
+            TableName = "Events",
+            AttributeDefinitions = [new("PK", ScalarAttributeType.S)],
+            KeySchema = [new("PK", KeyType.HASH)],
+            ProvisionedThroughput = new ProvisionedThroughput(5, 5)
+        });
     }
 
     public HubConnection CreateHubConnection()
@@ -86,6 +106,11 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             .WithUrl("http://localhost/ticketHub", o => { o.HttpMessageHandlerFactory = _ => Server.CreateHandler(); })
             .Build();
         return hubConnection;
+    }
+
+    public async Task ClearCache()
+    {
+        await _redisCache.ExecAsync(new[] { "redis-cli", "FLUSHALL" });
     }
 
     public new async Task DisposeAsync()
