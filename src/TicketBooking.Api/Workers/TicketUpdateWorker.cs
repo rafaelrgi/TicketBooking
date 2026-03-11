@@ -3,9 +3,11 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Options;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Application.Interfaces;
 using TicketBooking.Domain.Interfaces;
+using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Api;
 
@@ -17,16 +19,17 @@ public class TicketUpdateWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
 
-    //TODO: usar IAmazonSQS para buscar a URL pelo nome
-    private const string QueueUrl = "http://localhost:4566/000000000000/TicketUpdatesQueue";
+    //private const string QueueUrl = "http://localhost:4566/000000000000/TicketUpdatesQueue";
+    private readonly string _queueUrl;
 
     public TicketUpdateWorker(IAmazonSQS sqs, IHubContext<TicketHub> hubContext, ITicketCacheService cache,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory, IOptions<SettingsUrls> settingsUrls)
     {
         _sqs = sqs ?? throw new ArgumentNullException(nameof(sqs));
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
         _cache = cache;
         _scopeFactory = scopeFactory;
+        _queueUrl = settingsUrls.Value.TicketUpdatesQueue;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,7 +39,7 @@ public class TicketUpdateWorker : BackgroundService
         {
             var request = new ReceiveMessageRequest
             {
-                QueueUrl = QueueUrl,
+                QueueUrl = _queueUrl,
                 MaxNumberOfMessages = 1,
                 WaitTimeSeconds = 20
             };
@@ -70,7 +73,7 @@ public class TicketUpdateWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var ticketRepository = scope.ServiceProvider.GetRequiredService<ITicketRepository>();
         await _hubContext.Clients.All.SendAsync("TicketUpdated", eventId, stoppingToken);
-        await _sqs.DeleteMessageAsync(QueueUrl, message.ReceiptHandle, stoppingToken);
+        await _sqs.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken);
     }
 
     public static string GetEventIdFromJson(string json)

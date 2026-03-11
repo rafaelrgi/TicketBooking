@@ -6,6 +6,7 @@ using TicketBooking.Domain.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Application.Interfaces;
+using TicketBooking.Domain.Constants;
 
 namespace TicketBooking.Api.Endpoints;
 
@@ -16,13 +17,11 @@ public static class EventApi
 {
     public static IEndpointRouteBuilder MapEventEndpoints(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/events");
+        app.MapGet(ApiRoutes.Events.GetEvents, GetEventIds).RequireAuthorization();
+        app.MapGet($"{ApiRoutes.Events.GetEvent}{{eventId}}", GetEvent).RequireAuthorization();
+        app.MapGet($"{ApiRoutes.Events.GetStats}{{eventId}}", GetStats).RequireAuthorization();
 
-        api.MapGet("/", GetEventIds).RequireAuthorization();
-        api.MapGet("/{eventId}", GetEvent).RequireAuthorization();
-        api.MapGet("/stats/{eventId}", GetStats).RequireAuthorization();
-
-        api.MapPut("/", SaveEvent).RequireAuthorization("RequireAdmin");
+        app.MapPut(ApiRoutes.Events.SaveEvent, SaveEvent).RequireAuthorization(AuthConstants.AdminPolicy);
 
         return app;
     }

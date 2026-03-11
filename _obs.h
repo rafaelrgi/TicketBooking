@@ -10,12 +10,16 @@ x Redis
 
 x Só salvar tickets reservados ou confirmados, disponiveis controlar pela tabela Events
 
-- Regras de negócio:
+x Regras de negócio:
   x Só cancelar tickets não confirmados
   x Não reservar tickets acima da quota
   x Não reservar tickets se evento não existe
   x Só confirmar tickets reservados
   x Só reservar tickets não confirmados e não reservados
+
+x Auth (KeyCloak)
+
+- Urls
 
 - Log
 
@@ -58,6 +62,7 @@ docker exec -it ticket-booking-aws awslocal stepfunctions delete-state-machine -
 docker logs -f ticket-booking-aws
 
 // Investigar erros State Machine:
+docker exec -it ticket-booking-aws awslocal stepfunctions list-state-machines
 docker exec -it ticket-booking-aws awslocal stepfunctions list-executions --state-machine-arn "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow"
 docker exec -it ticket-booking-aws awslocal stepfunctions get-execution-history --execution-arn <ARN RETORNADO ACIMA>
 

@@ -12,6 +12,7 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./setup-aws.sh:/etc/localstack/init/ready.d/setup-aws.sh"
+      - "./workflow-definition.json:/etc/localstack/init/ready.d/workflow-definition.json"
 
   keycloak:
     container_name: ticket-booking-auth

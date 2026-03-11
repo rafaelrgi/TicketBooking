@@ -16,6 +16,7 @@ using TicketBooking.Api;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
+using TicketBooking.Domain.Settings;
 using TicketBooking.Infra.Caching;
 
 public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
@@ -163,9 +164,13 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             .Setup(x => x.CreateScope())
             .Returns(mockScope.Object);
 
-
+        var settings = new SettingsUrls
+        {
+            TicketUpdatesQueue = "http://localhost:4566/000000000000/TicketUpdatesQueue"
+        };
+        var optionsWrapper = new OptionsWrapper<SettingsUrls>(settings);
         var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, new TicketCacheService(cache),
-            mockScopeFactory.Object);
+            mockScopeFactory.Object, optionsWrapper);
         return worker;
     }
 

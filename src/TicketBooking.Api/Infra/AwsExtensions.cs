@@ -1,6 +1,7 @@
 using Amazon.DynamoDBv2;
 using Amazon.SQS;
 using Amazon.StepFunctions;
+using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Api.Infra;
 
@@ -8,11 +9,14 @@ public static class AwsExtensions
 {
     public static IServiceCollection AddAws(this IServiceCollection services, IConfiguration config,  IWebHostEnvironment environment)
     {
+        var settingsAws = config.GetSection(SettingsAws.SectionName).Get<SettingsAws>();
+        if (settingsAws == null)
+            throw new ArgumentNullException(nameof(services));
+
         var awsOptions = config.GetAWSOptions();
-        var customServiceUrl = Environment.GetEnvironmentVariable("AWS_SERVICE_URL");
-        if (!string.IsNullOrEmpty(customServiceUrl))
+        if (!string.IsNullOrEmpty(settingsAws.ServiceUrl))
         {
-            awsOptions.DefaultClientConfig.ServiceURL = customServiceUrl;
+            awsOptions.DefaultClientConfig.ServiceURL = settingsAws.ServiceUrl;
             awsOptions.DefaultClientConfig.UseHttp = true;
         }
 
@@ -24,8 +28,8 @@ public static class AwsExtensions
             {
                 var cfg = new AmazonDynamoDBConfig
                 {
-                    ServiceURL = "http://localhost:4566",
-                    AuthenticationRegion = "sa-east-1"
+                    ServiceURL = settingsAws.ServiceUrl,
+                    AuthenticationRegion = settingsAws.Region
                 };
                 return new AmazonDynamoDBClient(credentials, cfg);
             });
@@ -33,8 +37,8 @@ public static class AwsExtensions
             {
                 var cfg = new AmazonSQSConfig
                 {
-                    ServiceURL = "http://localhost:4566",
-                    AuthenticationRegion = "sa-east-1"
+                    ServiceURL = settingsAws.ServiceUrl,
+                    AuthenticationRegion = settingsAws.Region
                 };
                 return new AmazonSQSClient(credentials, cfg);
             });
@@ -43,8 +47,8 @@ public static class AwsExtensions
             {
                 var cfg = new AmazonStepFunctionsConfig
                 {
-                    ServiceURL = "http://localhost:4566",
-                    AuthenticationRegion = "sa-east-1"
+                    ServiceURL = settingsAws.ServiceUrl,
+                    AuthenticationRegion = settingsAws.Region
                 };
                 return new AmazonStepFunctionsClient(credentials, cfg);
             });

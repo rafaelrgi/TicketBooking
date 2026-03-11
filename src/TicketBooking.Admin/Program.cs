@@ -1,34 +1,25 @@
-
-using Amazon.Runtime;
-using Amazon.DynamoDBv2;
 using MudBlazor.Services;
 using TicketBooking.Admin.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Keycloak.AuthServices.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using TicketBooking.Admin;
 using TicketBooking.Admin.Infra;
+using TicketBooking.Domain.Settings;
+using TicketBooking.Infra.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSettings(builder.Configuration);
+builder.Services.Configure<SettingsUrls>(builder.Configuration.GetSection(SettingsUrls.SectionName));
+builder.Services.Configure<SettingsAws>(builder.Configuration.GetSection(SettingsAws.SectionName));
+builder.Services.Configure<SettingsAuth>(builder.Configuration.GetSection(SettingsAuth.SectionName));
 
 builder.Services.AddAuth(builder.Configuration);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents(options =>
-    {
-        options.DetailedErrors = true;
-    });
+    .AddInteractiveServerComponents(options => { options.DetailedErrors = true; });
 
 builder.Services.AddMudServices();
-
-builder.Services.AddScoped(sp => new HttpClient
-{
-    //TODO: config
-    BaseAddress = new Uri("http://localhost:5070/")
-});
 
 var app = builder.Build();
 

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Admin.Infra;
 
@@ -8,6 +9,15 @@ public static class AuthExtensions
 {
     public static IServiceCollection AddAuth(this IServiceCollection services, IConfiguration config)
     {
+        var settingsAuth = config.GetSection(SettingsAuth.SectionName).Get<SettingsAuth>();
+        var settingsUrls = config.GetSection(SettingsUrls.SectionName).Get<SettingsUrls>();
+        if (settingsUrls == null || settingsAuth == null)
+            throw new ArgumentNullException(nameof(services));
+
+#if DEBUG
+        Microsoft.IdentityModel.Logging.IdentityModelEventSource.ShowPII = true;
+#endif
+
         services.AddAuthentication(options =>
             {
                 options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -16,12 +26,11 @@ public static class AuthExtensions
             .AddCookie()
             .AddOpenIdConnect(options =>
             {
-                var keycloakConfig = config.GetSection("Keycloak");
-                options.Authority = $"{keycloakConfig["auth-server-url"]}realms/{keycloakConfig["realm"]}";
-                options.ClientId = keycloakConfig["resource"];
-                options.ClientSecret = keycloakConfig["credentials:secret"];
+                options.Authority = settingsAuth.Authority;
+                options.ClientId = settingsAuth.Resource;
+                options.ClientSecret = settingsAuth.Credentials.Secret;
                 options.RequireHttpsMetadata = false;
-                options.CallbackPath = "/signin-oidc";
+                options.CallbackPath = settingsUrls.SignIn;
                 options.ResponseType = OpenIdConnectResponseType.Code;
                 options.Scope.Add("openid");
                 options.Scope.Add("profile");
@@ -30,8 +39,8 @@ public static class AuthExtensions
 
                 options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
                 {
-                    NameClaimType = "preferred_username",
-                    RoleClaimType = "role"
+                    NameClaimType = settingsAuth.NameClaimType,
+                    RoleClaimType = settingsAuth.RoleClaimType
                 };
             });
 
@@ -43,15 +52,11 @@ public static class AuthExtensions
 
         services.AddHttpClient("API", client =>
             {
-                //TODO: config?
-                client.BaseAddress = new Uri("http://localhost:5070/");
+                client.BaseAddress = new Uri(settingsUrls.ApiBase);
             })
             .AddHttpMessageHandler<AuthHandler>();
 
-        services.AddHeaderPropagation(options =>
-        {
-            options.Headers.Add("Authorization");
-        });
+        services.AddHeaderPropagation(options => { options.Headers.Add("Authorization"); });
 
         return services;
     }

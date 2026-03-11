@@ -2,17 +2,34 @@
 @tickets = http://localhost:5070/api/tickets
 @events = http://localhost:5070/api/events
 
+### Login
+POST http://localhost:8080/realms/tickets/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=tickets&
+username=master&
+password=1234&
+grant_type=password&
+client_secret=B9LTDjeWZJPzhSAYw0PslpDeZ8Ls9afQ
+
+> {%
+    client.global.set("auth_token", response.body.access_token);     // {{auth_token}}
+%}
+
 ### Create event 1
 PUT {{events}}
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Rock In Rio",
   "totalTickets": "128"
 }
+
 ### Create event 2
 PUT {{events}}
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Woodstock",
@@ -23,6 +40,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/reserve
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
     "eventId": "Rock In Rio",
@@ -34,6 +52,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/confirm
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Rock In Rio",
@@ -43,6 +62,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/reserve
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Rock In Rio",
@@ -54,6 +74,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/confirm
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Rock In Rio",
@@ -63,6 +84,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/reserve
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Rock In Rio",
@@ -74,6 +96,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/reserve
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Rock In Rio",
@@ -85,6 +108,7 @@ Content-Type: application/json
 ###
 POST {{tickets}}/reserve
 Content-Type: application/json
+Authorization: Bearer {{auth_token}}
 
 {
   "eventId": "Woodstock",

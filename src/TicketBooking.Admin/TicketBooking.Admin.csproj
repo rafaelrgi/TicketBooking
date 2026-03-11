@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../TicketBooking.Domain/TicketBooking.Domain.csproj" />
+    <ProjectReference Include="..\TicketBooking.Infra\TicketBooking.Infra.csproj" />
   </ItemGroup>
 
 </Project>

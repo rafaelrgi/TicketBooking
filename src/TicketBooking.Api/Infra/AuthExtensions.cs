@@ -1,6 +1,8 @@
 using Keycloak.AuthServices.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using TicketBooking.Domain.Constants;
+using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Api.Infra;
 
@@ -8,17 +10,23 @@ public static class AuthExtensions
 {
     public static IServiceCollection AddAuth(this IServiceCollection services, IConfiguration config)
     {
+        var settingsAuth = config.GetSection(SettingsAuth.SectionName).Get<SettingsAuth>();
+        var settingsUrls = config.GetSection(SettingsUrls.SectionName).Get<SettingsUrls>();
+        if (settingsUrls == null || settingsAuth == null)
+            throw new ArgumentNullException(nameof(services));
+
+#if DEBUG
+        Microsoft.IdentityModel.Logging.IdentityModelEventSource.ShowPII = true;
+#endif
         services.AddKeycloakWebApiAuthentication(config, options =>
         {
-            //TODO: config?
-            var realmUrl = "http://localhost:8080/realms/tickets";
-            options.MetadataAddress = $"{realmUrl}/.well-known/openid-configuration";
-            options.Authority = realmUrl;
+            options.MetadataAddress = settingsUrls.MetadataAddress;
+            options.Authority = settingsUrls.RealmUrl;
             options.RequireHttpsMetadata = false;
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
-                ValidIssuer = realmUrl,
+                ValidIssuer = settingsUrls.RealmUrl,
                 ValidateAudience = false,
                 ValidateIssuerSigningKey = true
             };
@@ -46,12 +54,12 @@ public static class AuthExtensions
 
         services.AddAuthorization(options =>
         {
-            options.AddPolicy("RequireAdmin", policy =>
+            options.AddPolicy(AuthConstants.AdminPolicy, policy =>
                 policy.RequireAssertion(context =>
                 {
                     var realmAccessClaim = context.User.FindFirst("realm_access");
                     if (realmAccessClaim == null) return false;
-                    return realmAccessClaim.Value.Contains("\"Admin\"");
+                    return realmAccessClaim.Value.Contains('"' + AuthConstants.AdminRole + '"');
                 }));
         });
 

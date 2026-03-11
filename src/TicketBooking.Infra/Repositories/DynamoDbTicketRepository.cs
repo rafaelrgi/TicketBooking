@@ -25,13 +25,18 @@ public class DynamoDbTicketRepository : ITicketRepository
                { "PK", new AttributeValue { S = $"EVENT#{ticket.EventId}" } },
                { "SK", new AttributeValue { S = $"TICKET#{ticket.TicketId}" } }
            },
-           UpdateExpression = "SET #s = :reserved, UpdatedAt = :now",
+           UpdateExpression = "SET #s = :reserved, #c2 = :v2, UpdatedAt = :now",
            ConditionExpression = "attribute_not_exists(#s) OR #s = :available",
-           ExpressionAttributeNames = new Dictionary<string, string> { { "#s", "Status" } },
+           ExpressionAttributeNames = new Dictionary<string, string>
+           {
+               { "#s", "Status" },
+               { "#c2", "IsVip" }
+           },
            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
            {
                { ":reserved", new AttributeValue { S = "Reserved" } },
                { ":available", new AttributeValue { S = "Available" } },
+               { ":v2", new AttributeValue { BOOL = ticket.IsVip } },
                { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
            }
        };
