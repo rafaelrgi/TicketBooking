@@ -19,9 +19,9 @@ x Regras de negócio:
 
 x Auth (KeyCloak)
 
-- Urls
+x Url's em config
 
-- Log
+x Log
 
 - API Gateway
 
@@ -32,8 +32,6 @@ x Auth (KeyCloak)
 - SNS
 
 - Readme
-
-- Url's em config
 
 - Grafana ?
 

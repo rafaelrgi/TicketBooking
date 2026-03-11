@@ -2,16 +2,18 @@ using MudBlazor.Services;
 using TicketBooking.Admin.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Serilog;
 using TicketBooking.Admin.Infra;
 using TicketBooking.Domain.Settings;
 using TicketBooking.Infra.Settings;
 
+// Log.Logger = new LoggerConfiguration()
+//     .WriteTo.Console()
+//     .CreateBootstrapLogger();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSettings(builder.Configuration);
-builder.Services.Configure<SettingsUrls>(builder.Configuration.GetSection(SettingsUrls.SectionName));
-builder.Services.Configure<SettingsAws>(builder.Configuration.GetSection(SettingsAws.SectionName));
-builder.Services.Configure<SettingsAuth>(builder.Configuration.GetSection(SettingsAuth.SectionName));
 
 builder.Services.AddAuth(builder.Configuration);
 
@@ -42,10 +44,7 @@ app.UseAuthorization();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapGet("/login", (string? returnUrl = "/") =>
-{
-    return Results.Challenge(new AuthenticationProperties { RedirectUri = returnUrl },
-        [OpenIdConnectDefaults.AuthenticationScheme]);
-});
+app.MapGet("/login", (string? returnUrl = "/") => Results.Challenge(new AuthenticationProperties { RedirectUri = returnUrl },
+    [OpenIdConnectDefaults.AuthenticationScheme]));
 
 app.Run();

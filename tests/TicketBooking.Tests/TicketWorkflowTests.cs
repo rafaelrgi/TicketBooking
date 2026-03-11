@@ -1,19 +1,21 @@
 using Amazon.DynamoDBv2;
-using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
-using TicketBooking.Api;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 using TicketBooking.Api.Hubs;
+using TicketBooking.Api.Workers;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
 using TicketBooking.Domain.Settings;
@@ -22,8 +24,28 @@ using TicketBooking.Infra.Caching;
 public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
 {
     private readonly LocalStackFixture _fixture;
+    private readonly ILoggerFactory _loggerFactory;
+    //private readonly ILogger<TicketWorkflowTests> _logger;
 
-    public TicketWorkflowTests(LocalStackFixture fixture) => _fixture = fixture;
+    public TicketWorkflowTests(LocalStackFixture fixture, ITestOutputHelper output)
+    {
+        _fixture = fixture;
+
+        var serilogLogger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Sink(new XUnit3Sink())
+            .CreateLogger();
+        _loggerFactory = new LoggerFactory().AddSerilog(serilogLogger);
+    }
+
+    private class XUnit3Sink : ILogEventSink
+    {
+        public void Emit(LogEvent logEvent)
+        {
+            var message = logEvent.RenderMessage();
+            TestContext.Current.SendDiagnosticMessage($"[{logEvent.Level}] {message}");
+        }
+    }
 
     [Fact]
     public Task DummyTest_ToCheckSetup()
@@ -47,10 +69,10 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     }
 
     [Theory]
-    [InlineData("{\"PK\": \"EVENT#rock-in-rio\", \"SK\": \"TICKET#256\"}", "256")]
-    [InlineData("{\"PK\": \"EVENT#woodstock\", \"SK\": \"TICKET#666\"}", "666")]
-    [InlineData("{\"PK\": \"EVENT#rock-n-roll-circus\", \"SK\": \"TICKET#\"}", "")]
-    public void Worker_ShouldExtractCorrectTicketId(string jsonInput, string expectedEventId)
+    [InlineData("{\"PK\": \"EVENT#rock-in-rio\", \"SK\": \"TICKET#256\"}", 256)]
+    [InlineData("{\"PK\": \"EVENT#woodstock\", \"SK\": \"TICKET#666\"}", 666)]
+    [InlineData("{\"PK\": \"EVENT#rock-n-roll-circus\", \"SK\": \"TICKET#\"}", 0)]
+    public void Worker_ShouldExtractCorrectTicketId(string jsonInput, int expectedEventId)
     {
         // Act
         var result = TicketUpdateWorker.GetTicketIdFromJson(jsonInput);
@@ -147,7 +169,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             Times.Once);
     }
 
-    private static TicketUpdateWorker CreateTicketUpdateWorker(Mock<ITicketRepository> mockRepo, Mock<IAmazonSQS> mockSqs,
+    private TicketUpdateWorker CreateTicketUpdateWorker(Mock<ITicketRepository> mockRepo, Mock<IAmazonSQS> mockSqs,
         Mock<IHubContext<TicketHub>> mockHubContext)
     {
         var opts = Options.Create(new MemoryDistributedCacheOptions());
@@ -168,9 +190,10 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         {
             TicketUpdatesQueue = "http://localhost:4566/000000000000/TicketUpdatesQueue"
         };
+        var workerLogger = _loggerFactory.CreateLogger<TicketUpdateWorker>();
         var optionsWrapper = new OptionsWrapper<SettingsUrls>(settings);
         var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, new TicketCacheService(cache),
-            mockScopeFactory.Object, optionsWrapper);
+            mockScopeFactory.Object, optionsWrapper, workerLogger);
         return worker;
     }
 
