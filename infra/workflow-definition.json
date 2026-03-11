@@ -1,0 +1,60 @@
+{
+  "StartAt": "WaitForPayment",
+  "States": {
+    "WaitForPayment": {
+      "Type": "Wait",
+      "Seconds": 12,
+      "Next": "CancelReservation"
+    },
+    "CancelReservation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:deleteItem",
+      "Parameters": {
+        "TableName": "Tickets",
+        "Key": {
+          "PK": { "S.$": "$.PK" },
+          "SK": { "S.$": "$.SK" }
+        },
+        "ConditionExpression": "#s <> :confirmed",
+        "ExpressionAttributeNames": { "#s": "Status" },
+        "ExpressionAttributeValues": {
+          ":confirmed": { "S": "Confirmed" }
+        }
+      },
+      "ResultPath": "$.deleteResult",
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDb.ConditionalCheckFailedException"],
+          "Next": "IgnoreCancellation"
+        }
+      ],
+      "Next": "NotifyQueue"
+    },
+    "IgnoreCancellation": {
+      "Type": "Pass",
+      "Result": "Ticket was already confirmed, keeping it in table.",
+      "End": true
+    },
+    "NotifyQueue": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Parameters": {
+        "QueueUrl": "http://sqs.sa-east-1.localhost.localstack.cloud:4566/000000000000/TicketUpdatesQueue",
+        "MessageBody": {
+          "PK.$": "$.PK",
+          "SK.$": "$.SK",
+          "Status": "Available"
+        }
+      },
+      "End": true
+    }
+  }
+}

@@ -6,7 +6,10 @@ using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using TicketBooking.Domain.Constants;
 using TicketBooking.Domain.Entities;
+using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Tests.Integration;
 
@@ -18,7 +21,10 @@ public class EventApiTests : IClassFixture<ApiFactory>
 
     public EventApiTests(ApiFactory factory)
     {
+        var urls = factory.Services.GetRequiredService<IOptions<SettingsUrls>>().Value;
         _client = factory.CreateClient();
+        _client.BaseAddress = new Uri(urls.ApiBase);
+
         _dynamoDb = factory.Services.GetRequiredService<IAmazonDynamoDB>();
         _factory = factory;
     }
@@ -41,7 +47,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Authorization = null;
 
         // Act
-        var response = await _client.GetAsync($"/api/events/{eventId}");
+        var response = await _client.GetAsync($"{ApiRoutes.Events.GetEvent}{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -57,7 +63,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
 
         // Act
-        var response = await _client.GetAsync($"/api/events/{eventId}");
+        var response = await _client.GetAsync($"{ApiRoutes.Events.GetEvent}{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -74,7 +80,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         client.DefaultRequestHeaders.Add("X-Test-Expired", "true");
 
         // Act
-        var response = await client.GetAsync("/api/events");
+        var response = await client.GetAsync(ApiRoutes.Events.GetEvents, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -91,7 +97,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         var content = JsonContent.Create(new { eventId = "Lóke In Rio", totalTickets = 512 });
 
         // Act
-        var response = await client.PutAsync("/api/events", content);
+        var response = await client.PutAsync(ApiRoutes.Events.GetEvents, content, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -108,7 +114,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         var content = JsonContent.Create(new { eventId = "Loky en Rio", totalTickets = 32 });
 
         // Act
-        var response = await client.PutAsync("/api/events", content);
+        var response = await client.PutAsync(ApiRoutes.Events.GetEvents, content, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -124,7 +130,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
         client.DefaultRequestHeaders.Add("X-Role", "User");
 
         // Act
-        var response = await client.GetAsync("/api/events");
+        var response = await client.GetAsync(ApiRoutes.Events.GetEvents, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(response.IsSuccessStatusCode);
@@ -151,7 +157,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
 
         // Act:
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
-        var response = await _client.GetAsync($"/api/events/", TestContext.Current.CancellationToken);
+        var response = await _client.GetAsync(ApiRoutes.Events.GetEvents, TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -183,7 +189,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
 
         // Act
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
-        var response = await _client.PutAsync($"/api/events", content, TestContext.Current.CancellationToken);
+        var response = await _client.PutAsync(ApiRoutes.Events.GetEvents, content, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
         var row = await GetEventFromDb(evt.EventId);
 
@@ -226,7 +232,7 @@ public class EventApiTests : IClassFixture<ApiFactory>
 
         // Act
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
-        var response = await _client.GetAsync($"/api/events/stats/{eventId}", TestContext.Current.CancellationToken);
+        var response = await _client.GetAsync($"{ApiRoutes.Events.GetStats}{eventId}", TestContext.Current.CancellationToken);
         var stats = await response.Content.ReadFromJsonAsync<EventStats>(TestContext.Current.CancellationToken);
 
         // Assert

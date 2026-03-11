@@ -6,13 +6,21 @@ using TicketBooking.Infra.Repositories;
 using TicketBooking.Application.Interfaces;
 using TicketBooking.Infra.Caching;
 using TicketBooking.Api.Infra;
+using TicketBooking.Domain.Settings;
+using TicketBooking.Infra.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSettings(builder.Configuration);
+builder.Services.Configure<SettingsUrls>(builder.Configuration.GetSection(SettingsUrls.SectionName));
+builder.Services.Configure<SettingsAws>(builder.Configuration.GetSection(SettingsAws.SectionName));
+builder.Services.Configure<SettingsAuth>(builder.Configuration.GetSection(SettingsAuth.SectionName));
+var settingsUrls = builder.Configuration.GetSection(SettingsUrls.SectionName).Get<SettingsUrls>()!;
 
 builder.Services.AddAuth(builder.Configuration);
 
 // Redis setup
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? settingsUrls.Redis;
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisConnectionString;
@@ -37,7 +45,7 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5025", "http://127.0.0.1:5025")
+        policy.WithOrigins(settingsUrls.AllowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -62,7 +70,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseWebSockets();
-app.MapHub<TicketHub>("/tickethub");
+app.MapHub<TicketHub>(settingsUrls.TicketHub);
 app.MapEventEndpoints();
 app.MapTicketEndpoints();
 

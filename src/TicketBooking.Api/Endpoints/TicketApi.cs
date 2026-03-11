@@ -3,9 +3,12 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
+using Microsoft.Extensions.Options;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
 using TicketBooking.Application.Interfaces;
+using TicketBooking.Domain.Constants;
+using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Api.Endpoints;
 
@@ -17,18 +20,20 @@ public record ConfirmationRequest(string EventId, int TicketId, string UserId);
 
 public static class TicketApi
 {
+    private static readonly JsonSerializerOptions JsonSerializerOpt = new JsonSerializerOptions{ PropertyNamingPolicy = null };
+
     public static IEndpointRouteBuilder MapTicketEndpoints(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/tickets");
+        app.MapPost(ApiRoutes.Tickets.ReserveTicket, ReserveTicket).RequireAuthorization();
+        app.MapPost(ApiRoutes.Tickets.ConfirmTicket, ConfirmTicket).RequireAuthorization();
 
-        api.MapPost("/reserve", ReserveTicket).RequireAuthorization();
-        api.MapPost("/confirm", ConfirmTicket).RequireAuthorization();
-        api.MapGet("/{eventId}", GetTickets).RequireAuthorization("RequireAdmin");
+        app.MapGet($"{ApiRoutes.Tickets.GetTickets}{{eventId}}", GetTickets).RequireAuthorization(AuthConstants.AdminPolicy);
 
         return app;
     }
 
-    private static async Task<IResult> GetTickets(string eventId, HttpContext context, ITicketRepository repository, ITicketCacheService cache)
+    private static async Task<IResult> GetTickets(string eventId, HttpContext context, ITicketRepository repository,
+        ITicketCacheService cache)
     {
         var authHeader = context.Request.Headers["Authorization"].ToString();
         Console.WriteLine($"Token recebido pela API: {authHeader}");
@@ -48,8 +53,8 @@ public static class TicketApi
         return Results.Ok(tickets);
     }
 
-    private static async Task<IResult> ConfirmTicket(ConfirmationRequest request,
-        ITicketRepository repository, IAmazonSQS queue, ITicketCacheService cache)
+    private static async Task<IResult> ConfirmTicket(ConfirmationRequest request, IOptions<SettingsUrls> settingsUrls,
+        IAmazonSQS queue, ITicketRepository repository, ITicketCacheService cache)
     {
         var ticket = await repository.GetTicket(request.EventId, request.TicketId);
         if (ticket is not { Status: "Reserved" })
@@ -59,7 +64,7 @@ public static class TicketApi
         ticket.UpdatedAt = DateTime.UtcNow;
         var success = await repository.ConfirmTicket(ticket);
         await cache.InvalidateEventCache(request.EventId);
-        await NotifyQueue(ticket, "Confirmed", queue);
+        await NotifyQueue(ticket, "Confirmed", queue, settingsUrls);
 
         return success
             ? Results.Ok(new { message = "Confirmation saved" })
@@ -68,7 +73,8 @@ public static class TicketApi
 
     private static async Task<IResult> ReserveTicket(ReservationRequest request,
         ITicketRepository repository, IEventRepository eventRepository,
-        IAmazonStepFunctions stepFunctions, IAmazonSQS queue, ITicketCacheService cache)
+        IAmazonStepFunctions stepFunctions, IAmazonSQS queue, ITicketCacheService cache,
+        IOptions<SettingsAws> settingsAws, IOptions<SettingsUrls> settingsUrls)
     {
         var evt = await eventRepository.GetEvent(request.EventId);
         if (evt is null)
@@ -89,18 +95,16 @@ public static class TicketApi
 
         var success = await repository.ReserveTicket(ticket);
         await cache.InvalidateEventCache(request.EventId);
-        await NotifyQueue(ticket, "Reserved", queue);
-        var cancelFlow = await StartReservationFlow(stepFunctions, ticket);
+        await NotifyQueue(ticket, "Reserved", queue, settingsUrls);
+        var cancelFlow = await StartReservationFlow(stepFunctions, ticket, settingsAws);
 
         return success
             ? Results.Ok(new { message = "Reservation saved" })
             : Results.BadRequest("Error saving Reservation");
     }
 
-    private static async Task NotifyQueue(Ticket ticket, string status, IAmazonSQS queue)
+    private static async Task NotifyQueue(Ticket ticket, string status, IAmazonSQS queue, IOptions<SettingsUrls> settingsUrls)
     {
-        //TODO: usar IAmazonSQS para buscar a URL pelo nome? config?
-        const string queueUrl = "http://localhost:4566/000000000000/TicketUpdatesQueue";
         var message = new
         {
             PK = $"EVENT#{ticket.EventId}",
@@ -110,29 +114,26 @@ public static class TicketApi
 
         await queue.SendMessageAsync(new SendMessageRequest
         {
-            QueueUrl = queueUrl,
+            QueueUrl = settingsUrls.Value.TicketUpdatesQueue,
             MessageBody = JsonSerializer.Serialize(message)
         });
-
         Console.WriteLine($">>> NotifyQueue: {ticket.EventId}.{ticket.TicketId} = {status}");
     }
 
 
-    private static async Task<StartExecutionResponse> StartReservationFlow(IAmazonStepFunctions stepFunctions, Ticket ticket)
+    private static async Task<StartExecutionResponse> StartReservationFlow(IAmazonStepFunctions stepFunctions, Ticket ticket,
+        IOptions<SettingsAws> settingsAws)
     {
-        //TODO: reuse new JsonSerializerOptions { PropertyNamingPolicy = null })
         var startRequest = new StartExecutionRequest
         {
-            //TODO: cfg?
-            StateMachineArn = "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow",
+            StateMachineArn = settingsAws.Value.TicketWorkflowArn,
             Input = JsonSerializer.Serialize(new
             {
                 PK = $"EVENT#{ticket.EventId}",
                 SK = $"TICKET#{ticket.TicketId}",
                 status = "Canceled"
-            }, new JsonSerializerOptions { PropertyNamingPolicy = null })
+            }, JsonSerializerOpt) ?? "{}"
         };
-
         return await stepFunctions.StartExecutionAsync(startRequest);
     }
 }

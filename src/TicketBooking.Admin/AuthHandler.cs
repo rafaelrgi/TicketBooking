@@ -16,7 +16,7 @@ public class AuthHandler : DelegatingHandler
         CancellationToken cancellationToken)
     {
         var httpContext = _httpContextAccessor.HttpContext;
-        var accessToken = await httpContext.GetTokenAsync("access_token");
+        var accessToken = await httpContext?.GetTokenAsync("access_token")!;
         if (!string.IsNullOrEmpty(accessToken))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);

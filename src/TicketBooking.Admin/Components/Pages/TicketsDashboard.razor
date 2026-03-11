@@ -2,12 +2,15 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using TicketBooking.Domain.Entities
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Options
+@using TicketBooking.Domain.Constants
+@using TicketBooking.Domain.Settings
 
 @attribute [Authorize]
 @implements IAsyncDisposable
 @rendermode InteractiveServer
-@* @inject HttpClient Http *@
 @inject IHttpClientFactory ClientFactory
+@inject IOptions<SettingsUrls> Urls
 
 <MudText Typo="Typo.h4" Class="mb-5">Tickets Dashboard</MudText>
 
@@ -103,7 +106,7 @@ else
         await LoadData();
 
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl("http://localhost:5070/tickethub")
+            .WithUrl($"{Urls.Value.ApiBase}/{Urls.Value.TicketHub}")
             .WithAutomaticReconnect()
             .Build();
 
@@ -156,8 +159,7 @@ else
     {
         if (_tickets == null || _selectedEvent == null) return;
 
-        //TODO: url in config
-        _eventStats = await _http.GetFromJsonAsync<EventStats>($"http://localhost:5070/api/events/stats/{_selectedEvent}");
+        _eventStats = await _http.GetFromJsonAsync<EventStats>($"{Urls.Value.ApiBase}{ApiRoutes.Events.GetStats}{_selectedEvent}");
         if (_eventStats == null)
             _eventStats = new EventStats("", 0, 0, 0, 0);
 
@@ -176,8 +178,7 @@ else
         _events = [];
         try
         {
-            //TODO: url in config
-            var data = await _http.GetFromJsonAsync<List<string>>($"http://localhost:5070/api/events");
+            var data = await _http.GetFromJsonAsync<List<string>>($"{Urls.Value.ApiBase}{ApiRoutes.Events.GetEvents}");
             if (data != null) _events = data;
         }
         catch (Exception ex)
@@ -189,15 +190,11 @@ else
     private async Task GetTickets()
     {
         _tickets = [];
-
         if (_selectedEvent == null) return;
 
         try
         {
-            var client = ClientFactory.CreateClient("API");
-            Console.WriteLine($"Header Auth: {client.DefaultRequestHeaders.Authorization?.Parameter}");
-            //TODO: url in config
-            var data = await _http.GetFromJsonAsync<List<Ticket>>($"http://localhost:5070/api/tickets/{_selectedEvent}");
+            var data = await _http.GetFromJsonAsync<List<Ticket>>($"{Urls.Value.ApiBase}{ApiRoutes.Tickets.GetTickets}{_selectedEvent}");
             if (data != null) _tickets = data;
         }
         catch (Exception ex)

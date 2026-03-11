@@ -2,6 +2,8 @@ using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime;
 using Amazon.SQS;
+using Amazon.StepFunctions;
+using Amazon.StepFunctions.Model;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,7 +12,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 using Testcontainers.LocalStack;
 using Testcontainers.Redis;
 
@@ -24,31 +25,58 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        var awsConnectionString = _localStack.GetConnectionString();
+
+        builder.UseContentRoot(AppContext.BaseDirectory);
+        builder.ConfigureAppConfiguration((context, config) =>
+        {
+            config.SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables();
+
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Urls:TicketUpdatesQueue"] = $"{awsConnectionString}/000000000000/TicketUpdatesQueue",
+
+                ["SqsSettings:QueueUrl"] = awsConnectionString + "/000000000000/TicketUpdatesQueue",
+
+                ["Aws:TicketWorkflowArn"] = "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow",
+                ["Aws:Region"] = "sa-east-1",
+                ["Aws:ServiceURL"] = _localStack.GetConnectionString()
+            });
+        });
+        builder.UseEnvironment("Testing");
+
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IAmazonDynamoDB>();
             services.RemoveAll<IAmazonSQS>();
 
             services.AddSingleton<IAmazonDynamoDB>(sp =>
-                new AmazonDynamoDBClient(new BasicAWSCredentials("test", "test"),
-                    new AmazonDynamoDBConfig { ServiceURL = _localStack.GetConnectionString() }));
+            {
+                var config = new AmazonDynamoDBConfig { ServiceURL = awsConnectionString };
+                return new AmazonDynamoDBClient(new BasicAWSCredentials("test", "test"), config);
+            });
 
             services.AddSingleton<IAmazonSQS>(sp =>
-                new AmazonSQSClient(new BasicAWSCredentials("test", "test"),
-                    new AmazonSQSConfig { ServiceURL = _localStack.GetConnectionString() }));
-
-            var dynamicQueueUrl = _localStack.GetConnectionString() + "/000000000000/TicketUpdatesQueue";
-
-            builder.ConfigureAppConfiguration((context, config) =>
             {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["SqsSettings:QueueUrl"] = dynamicQueueUrl
-                });
+                var config = new AmazonSQSConfig { ServiceURL = awsConnectionString };
+                return new AmazonSQSClient(new BasicAWSCredentials("test", "test"), config);
             });
 
             var redisConnectionString = _redisCache.GetConnectionString();
             services.AddStackExchangeRedisCache(options => { options.Configuration = redisConnectionString; });
+
+            services.RemoveAll<IAmazonStepFunctions>();
+            services.AddSingleton<IAmazonStepFunctions>(sp =>
+            {
+                var config = new AmazonStepFunctionsConfig
+                {
+                    ServiceURL = awsConnectionString,
+                    AuthenticationRegion = "sa-east-1"
+                };
+                return new AmazonStepFunctionsClient(new BasicAWSCredentials("test", "test"), config);
+            });
 
             // Remove the real auth config
             var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(AuthenticationOptions));
@@ -68,15 +96,16 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await _localStack.StartAsync();
         await _redisCache.StartAsync();
+        var awsConnectionString = _localStack.GetConnectionString();
 
         var sqsClient = new AmazonSQSClient(
             new BasicAWSCredentials("test", "test"),
-            new AmazonSQSConfig { ServiceURL = _localStack.GetConnectionString() });
+            new AmazonSQSConfig { ServiceURL = awsConnectionString });
         await sqsClient.CreateQueueAsync("TicketUpdatesQueue");
 
         var client = new AmazonDynamoDBClient(
             new BasicAWSCredentials("test", "test"),
-            new AmazonDynamoDBConfig { ServiceURL = _localStack.GetConnectionString() });
+            new AmazonDynamoDBConfig { ServiceURL = awsConnectionString });
 
         await client.CreateTableAsync(new CreateTableRequest
         {
@@ -98,6 +127,41 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             KeySchema = [new("PK", KeyType.HASH)],
             ProvisionedThroughput = new ProvisionedThroughput(5, 5)
         });
+
+        await SetupStepFunctionsWorkflow();
+    }
+
+    private async Task SetupStepFunctionsWorkflow()
+    {
+        var stepClient = new AmazonStepFunctionsClient(
+            new BasicAWSCredentials("test", "test"),
+            new AmazonStepFunctionsConfig
+            {
+                ServiceURL = _localStack.GetConnectionString(),
+                AuthenticationRegion = "sa-east-1"
+            });
+
+        var binDir = AppContext.BaseDirectory;
+        var definitionPath = Path.GetFullPath(Path.Combine(binDir, "../../../../../infra/workflow-definition.json"));
+
+        if (!File.Exists(definitionPath))
+            throw new FileNotFoundException($"ASL Definition não encontrada: {definitionPath}");
+
+        var aslDefinition = await File.ReadAllTextAsync(definitionPath);
+
+        try
+        {
+            var response = await stepClient.CreateStateMachineAsync(new CreateStateMachineRequest
+            {
+                Name = "TicketBookingWorkflow",
+                Definition = aslDefinition,
+                RoleArn = "arn:aws:iam::000000000000:role/stepfunctions-role",
+                Type = StateMachineType.STANDARD
+            });
+        }
+        catch (StateMachineAlreadyExistsException)
+        {
+        }
     }
 
     public HubConnection CreateHubConnection()

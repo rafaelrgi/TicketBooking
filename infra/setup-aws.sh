@@ -21,71 +21,20 @@ awslocal dynamodb create-table \
 awslocal sqs create-queue --queue-name TicketUpdatesQueue || true
 
 # Reservation State Machine
-awslocal stepfunctions delete-state-machine \
-    --state-machine-arn arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow || true
+# awslocal stepfunctions delete-state-machine --state-machine-arn arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow || true
 
-DEFINITION='{
-  "StartAt": "WaitForPayment",
-  "States": {
-    "WaitForPayment": {
-      "Type": "Wait",
-      "Seconds": 12,
-      "Next": "CancelReservation"
-    },
-    "CancelReservation": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::dynamodb:deleteItem",
-      "Parameters": {
-        "TableName": "Tickets",
-        "Key": {
-          "PK": { "S.$": "$.PK" },
-          "SK": { "S.$": "$.SK" }
-        },
-        "ConditionExpression": "#s <> :confirmed",
-        "ExpressionAttributeNames": { "#s": "Status" },
-        "ExpressionAttributeValues": {
-          ":confirmed": { "S": "Confirmed" }
-        }
-      },
-      "ResultPath": "$.deleteResult",
-      "Catch": [
-        {
-          "ErrorEquals": ["DynamoDb.ConditionalCheckFailedException"],
-          "Next": "IgnoreCancellation"
-        }
-      ],
-      "Next": "NotifyQueue"
-    },
-    "IgnoreCancellation": {
-      "Type": "Pass",
-      "Result": "Ticket was already confirmed, keeping it in table.",
-      "End": true
-    },
-    "NotifyQueue": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::sqs:sendMessage",
-      "Retry": [
-          {
-            "ErrorEquals": ["States.ALL"],
-            "IntervalSeconds": 2,
-            "MaxAttempts": 3,
-            "BackoffRate": 2.0
-          }
-        ],
-      "Parameters": {
-        "QueueUrl": "http://sqs.sa-east-1.localhost.localstack.cloud:4566/000000000000/TicketUpdatesQueue",
-        "MessageBody": {
-          "PK.$": "$.PK",
-          "SK.$": "$.SK",
-          "Status": "Available"
-        }
-      },
-      "End": true
-    }
-  }
-}'
+DEFINITION_FILE="/etc/localstack/init/ready.d/workflow-definition.json"
+
+if [ -f "$DEFINITION_FILE" ]; then
+    echo "Reading State Machine from $DEFINITION_FILE"
+    DEFINITION=$(cat "$DEFINITION_FILE")
+else
+    echo "ERROR: missing State Machine definition! $DEFINITION_FILE"
+    exit 1
+fi
 
 awslocal stepfunctions create-state-machine \
+    --region sa-east-1 \
     --name "TicketBookingWorkflow" \
     --definition "$DEFINITION" \
     --role-arn "arn:aws:iam::000000000000:role/stepfunctions-role"  || true
