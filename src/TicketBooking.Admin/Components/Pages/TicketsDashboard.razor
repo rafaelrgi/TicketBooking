@@ -11,6 +11,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory ClientFactory
 @inject IOptions<SettingsUrls> Urls
+@inject ILogger<TicketsDashboard> logger
 
 <MudText Typo="Typo.h4" Class="mb-5">Tickets Dashboard</MudText>
 
@@ -98,7 +99,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        Console.WriteLine(">>> On InitializedAsync");
+        //logger.LogDebug("On InitializedAsync");
 
         _http = ClientFactory.CreateClient("API");
 
@@ -112,7 +113,7 @@ else
 
         _hubConnection.On<object>("TicketUpdated", async (data) =>
         {
-            Console.WriteLine($">>> SINAL RECEBIDO! Conteúdo: {data}");
+            //logger.LogDebug("Sinal recebido: {data}", data);
             string eventId = data?.ToString() ?? string.Empty;
             if (eventId == _selectedEvent)
             {
@@ -126,7 +127,7 @@ else
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Erro ao conectar no Hub da API: {ex.Message}");
+            logger.LogError("Error connecting to the Hub: {error}", ex.Message);
         }
     }
 
@@ -145,8 +146,7 @@ else
         }
         catch (Exception ex)
         {
-            //TODO: log
-            Console.WriteLine($"Error loading data: {ex.Message}");
+            logger.LogError("LoadData error: {error}", ex.Message);
         }
         finally
         {
@@ -183,7 +183,7 @@ else
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Erro ao buscar eventos: {ex.Message}");
+            logger.LogError("GetEvents error: {error}", ex.Message);
         }
     }
 
@@ -199,7 +199,7 @@ else
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Erro ao buscar assentos: {ex.Message}");
+            logger.LogError("GetTickets error: {error}", ex.Message);
         }
     }
 

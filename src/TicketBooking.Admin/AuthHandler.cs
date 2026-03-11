@@ -6,9 +6,11 @@ namespace TicketBooking.Admin;
 public class AuthHandler : DelegatingHandler
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ILogger<AuthHandler> _logger;
 
-    public AuthHandler(IHttpContextAccessor httpContextAccessor)
+    public AuthHandler(IHttpContextAccessor httpContextAccessor, ILogger<AuthHandler> logger)
     {
+        _logger = logger;
         _httpContextAccessor = httpContextAccessor;
     }
 
@@ -23,7 +25,7 @@ public class AuthHandler : DelegatingHandler
         }
         else
         {
-            Console.WriteLine("DEBUG: AuthHandler não encontrou o token!");
+            _logger.LogError("AuthHandler missing access_token: {request}", request.RequestUri);
         }
         return await base.SendAsync(request, cancellationToken);
     }
