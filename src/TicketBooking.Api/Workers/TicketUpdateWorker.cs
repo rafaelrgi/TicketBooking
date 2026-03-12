@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -50,7 +51,6 @@ public class TicketUpdateWorker : BackgroundService
                 {
                     foreach (var message in response!.Messages!)
                     {
-                        _logger.LogDebug("Message: {message}", message.Body);
                         await ProcessMessage(message, stoppingToken);
                     }
                 }
@@ -64,6 +64,8 @@ public class TicketUpdateWorker : BackgroundService
 
     public async Task ProcessMessage(Message message, CancellationToken stoppingToken)
     {
+        _logger.LogDebug("Worker Message: {message}", message.Body);
+
         var eventId = GetEventIdFromJson(message.Body);
         //var ticketId = GetTicketIdFromJson(message.Body);
 

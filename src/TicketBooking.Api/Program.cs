@@ -1,5 +1,8 @@
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Context.Propagation;
 using System.Text.Json;
-using TicketBooking.Api;
 using TicketBooking.Api.Endpoints;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Domain.Interfaces;
@@ -10,17 +13,35 @@ using TicketBooking.Api.Infra;
 using TicketBooking.Domain.Settings;
 using TicketBooking.Infra.Settings;
 using Serilog;
+using Serilog.Enrichers.Span;
 using TicketBooking.Api.Workers;
-
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateBootstrapLogger();
 
 try
 {
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Services.AddOpenTelemetry()
+        .WithTracing(tracing => tracing
+            .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.04)))
+            .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("TicketApi"))
+            .AddAspNetCoreInstrumentation(o => o.RecordException = true)
+            .AddHttpClientInstrumentation()
+            .AddAWSInstrumentation()
+            .AddSource("TicketBooking.Telemetry")
+            .AddOtlpExporter());
+
+    builder.Host.UseSerilog((context, services, configuration) => configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithSpan()
+        .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}"));
+
+    Log.Logger = new LoggerConfiguration()
+        .WriteTo.Console()
+        .CreateBootstrapLogger();
     Log.Information("Starting Api...");
 
-    var builder = WebApplication.CreateBuilder(args);
 
     builder.Services.AddSettings(builder.Configuration);
     var settingsUrls = builder.Configuration.GetSection(SettingsUrls.SectionName).Get<SettingsUrls>()!;
@@ -60,12 +81,15 @@ try
     {
         options.AddDefaultPolicy(policy =>
         {
-            policy.WithOrigins(settingsUrls.AllowedOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod()
-                .AllowCredentials();
+            if (settingsUrls.AllowedOrigins != null)
+                policy.WithOrigins(settingsUrls.AllowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials();
         });
     });
+
+    Sdk.SetDefaultTextMapPropagator(new TraceContextPropagator());
 
     var app = builder.Build();
 

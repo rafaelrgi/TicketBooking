@@ -2,16 +2,36 @@ using MudBlazor.Services;
 using TicketBooking.Admin.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
+using Serilog.Enrichers.Span;
 using TicketBooking.Admin.Infra;
 using TicketBooking.Domain.Settings;
 using TicketBooking.Infra.Settings;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.04)))
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("TicketAdmin"))
+        .AddAspNetCoreInstrumentation(o => o.RecordException = true)
+        .AddHttpClientInstrumentation()
+        .AddSource("TicketBooking.Telemetry")
+        .AddOtlpExporter());
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .Enrich.WithSpan()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}"));
 
 // Log.Logger = new LoggerConfiguration()
 //     .WriteTo.Console()
 //     .CreateBootstrapLogger();
 
-var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSettings(builder.Configuration);
 

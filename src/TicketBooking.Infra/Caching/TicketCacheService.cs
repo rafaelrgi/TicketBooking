@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
 using TicketBooking.Application.Interfaces;
 
 namespace TicketBooking.Infra.Caching;
@@ -6,27 +7,27 @@ namespace TicketBooking.Infra.Caching;
 public class TicketCacheService : ITicketCacheService
 {
     private readonly IDistributedCache _cache;
+    private readonly ILogger<TicketCacheService> _logger;
 
-    //TODO: Logs private readonly ILogger<TicketCacheService> _logger;
     private const string Prefix = "tickets:";
     private const int Seconds = 300;
 
-    public TicketCacheService(IDistributedCache cache)
+    public TicketCacheService(IDistributedCache cache, ILogger<TicketCacheService> logger)
     {
         _cache = cache;
+        _logger = logger;
     }
 
     public async Task InvalidateEventCache(string eventId)
     {
         try
         {
-            Console.WriteLine($">>> Clear cache: {eventId}");
+            _logger.LogDebug("Clear cache {eventId}", eventId);
             await _cache.RemoveAsync(GetKey(eventId));
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
-                ">>> Redis Offline (Invalidate)"); //TODO: _logger.LogWarning(ex, ">>> Redis Offline (Invalidate)");
+            _logger.LogError("Redis Offline!");
         }
     }
 
@@ -38,7 +39,7 @@ public class TicketCacheService : ITicketCacheService
         }
         catch (Exception ex)
         {
-            Console.WriteLine(">>> Redis Offline (Read)"); //TODO: _logger.LogWarning(ex, ">>> Redis Offline (Read)");
+            _logger.LogError("Redis Offline (Read)");
             return null;
         }
     }
@@ -47,13 +48,13 @@ public class TicketCacheService : ITicketCacheService
     {
         try
         {
-            Console.WriteLine($">>> Set cache: {eventId}");
+            _logger.LogDebug("Set cache {eventId}", eventId);
             await _cache.SetStringAsync(GetKey(eventId), data,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(Seconds) });
         }
         catch(Exception ex)
         {
-            Console.WriteLine(">>> Redis Offline (Write)"); //TODO: _logger.LogWarning(ex, ">>> Redis Offline (Write)");
+            _logger.LogError("Redis Offline");
         }
     }
 

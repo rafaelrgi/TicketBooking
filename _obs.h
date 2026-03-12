@@ -23,6 +23,10 @@ x Url's em config
 
 x Log
 
+x OpenTelemetry
+
+- Grafana 
+
 - API Gateway
 
 - CloudWatch
@@ -33,7 +37,6 @@ x Log
 
 - Readme
 
-- Grafana ?
 
 ------------------------------------------------------------------------------------------------------------------------
 

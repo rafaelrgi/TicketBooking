@@ -14,7 +14,6 @@ public static class AuthExtensions
         var settingsUrls = config.GetSection(SettingsUrls.SectionName).Get<SettingsUrls>();
         if (settingsUrls == null || settingsAuth == null)
             throw new ArgumentNullException(nameof(services));
-
 #if DEBUG
         Microsoft.IdentityModel.Logging.IdentityModelEventSource.ShowPII = true;
 #endif
@@ -30,6 +29,7 @@ public static class AuthExtensions
                 ValidateAudience = false,
                 ValidateIssuerSigningKey = true
             };
+/*
 #if DEBUG
             options.Events = new JwtBearerEvents
             {
@@ -50,6 +50,7 @@ public static class AuthExtensions
                 }
             };
 #endif
+*/
         });
 
         services.AddAuthorization(options =>

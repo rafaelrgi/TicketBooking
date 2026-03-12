@@ -191,8 +191,9 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             TicketUpdatesQueue = "http://localhost:4566/000000000000/TicketUpdatesQueue"
         };
         var workerLogger = _loggerFactory.CreateLogger<TicketUpdateWorker>();
+        var cacheLogger = _loggerFactory.CreateLogger<TicketCacheService>();
         var optionsWrapper = new OptionsWrapper<SettingsUrls>(settings);
-        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, new TicketCacheService(cache),
+        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, new TicketCacheService(cache, cacheLogger),
             mockScopeFactory.Object, optionsWrapper, workerLogger);
         return worker;
     }
