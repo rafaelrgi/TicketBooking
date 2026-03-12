@@ -1,16 +1,8 @@
-x Renomear "seat" >> "ticket"
-
-x Testes
-
 x Combo select evento
-
 x Confirmação pgto
-
 x Redis
-
-x Só salvar tickets reservados ou confirmados, disponiveis controlar pela tabela Events
-
 x Regras de negócio:
+  x Só salvar tickets reservados ou confirmados, disponiveis controlar pela tabela Events
   x Só cancelar tickets não confirmados
   x Não reservar tickets acima da quota
   x Não reservar tickets se evento não existe
@@ -18,18 +10,19 @@ x Regras de negócio:
   x Só reservar tickets não confirmados e não reservados
 
 x Auth (KeyCloak)
-
 x Url's em config
-
 x Log
-
 x OpenTelemetry
 
-- Grafana 
+- Aspire Dashboard
 
-- API Gateway
+- Jaeger (Traces)
+
+- Grafana (Loki = logs; Prometheus = métricas)
 
 - CloudWatch
+
+- API Gateway
 
 - EventBridge
 
@@ -85,3 +78,11 @@ docker exec -it ticket-booking-aws awslocal dynamodb update-item \
     --expression-attribute-names '{"#s": "Status"}' \
     --expression-attribute-values '{":val": {"S": "Reserved"}}'
 
+// Asppire
+docker run --rm -it \
+  -p 18888:18888 \
+  -p 4317:18889 \
+  --name aspire-dashboard \
+  mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+
+//*token, http://localhost:18888

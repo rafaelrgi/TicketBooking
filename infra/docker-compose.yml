@@ -27,7 +27,6 @@ services:
     ports:
       - "8080:8080"
 
-
   redis:
     container_name: ticket-booking-redis
     image: redis:alpine
@@ -35,3 +34,14 @@ services:
       - "6379:6379"
     # Optional: keep the cache if the container restart
     command: redis-server --save 60 1 --loglevel warning
+
+  aspire-dashboard:
+    container_name: aspire-dashboard
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+    environment:
+      - ASPIRE_ALLOW_UNSECURED_TRANSPORT=true
+      - DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
+    ports:
+      - "18888:18888"
+      - "4317:18889"
+

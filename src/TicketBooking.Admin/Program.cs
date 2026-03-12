@@ -26,7 +26,16 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Services(services)
     .Enrich.FromLogContext()
     .Enrich.WithSpan()
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}"));
+    //.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.OpenTelemetry(options =>
+    {
+        options.Endpoint = "http://localhost:4317";
+        options.ResourceAttributes = new Dictionary<string, object>
+        {
+            ["service.name"] = "TicketBooking-API"
+        };
+    })
+);
 
 // Log.Logger = new LoggerConfiguration()
 //     .WriteTo.Console()

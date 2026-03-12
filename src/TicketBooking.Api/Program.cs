@@ -1,5 +1,6 @@
 using OpenTelemetry;
 using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Context.Propagation;
 using System.Text.Json;
@@ -22,26 +23,37 @@ try
 
     builder.Services.AddOpenTelemetry()
         .WithTracing(tracing => tracing
-            .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.04)))
             .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("TicketApi"))
-            .AddAspNetCoreInstrumentation(o => o.RecordException = true)
-            .AddHttpClientInstrumentation()
-            .AddAWSInstrumentation()
+            .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.04)))
+            .AddAspNetCoreInstrumentation()
             .AddSource("TicketBooking.Telemetry")
+            .AddOtlpExporter())
+        .WithMetrics(metrics => metrics
+            .AddAspNetCoreInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddMeter("TicketBooking.Metrics")
             .AddOtlpExporter());
 
-    builder.Host.UseSerilog((context, services, configuration) => configuration
+  builder.Host.UseSerilog((context, services, configuration) => configuration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
         .Enrich.WithSpan()
-        .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}"));
+        //.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}")
+        .WriteTo.OpenTelemetry(options =>
+        {
+            options.Endpoint = "http://localhost:4317";
+            options.ResourceAttributes = new Dictionary<string, object>
+            {
+                ["service.name"] = "TicketBooking-API"
+            };
+        })
+        );
 
     Log.Logger = new LoggerConfiguration()
         .WriteTo.Console()
         .CreateBootstrapLogger();
     Log.Information("Starting Api...");
-
 
     builder.Services.AddSettings(builder.Configuration);
     var settingsUrls = builder.Configuration.GetSection(SettingsUrls.SectionName).Get<SettingsUrls>()!;
