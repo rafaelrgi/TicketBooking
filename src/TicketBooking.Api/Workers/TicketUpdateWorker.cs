@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -10,6 +11,35 @@ using TicketBooking.Domain.Interfaces;
 using TicketBooking.Domain.Settings;
 
 namespace TicketBooking.Api.Workers;
+
+public enum TicketState
+{
+    Available,
+    Reserved,
+    Confirmed
+}
+
+//TODO: dto
+public record QueueMessage(string EventId, int TicketId, TicketState State);
+
+public static class QueueMessageMapper
+{
+    private record SqsContract(string PK, string SK, string Status);
+
+    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
+
+    public static QueueMessage ToQueueMessage(this string jsonMsg)
+    {
+        var raw = JsonSerializer.Deserialize<SqsContract>(jsonMsg, Options);
+        if (raw == null) throw new JsonException($"Invalid queue message: {jsonMsg}");
+
+        return new QueueMessage(
+            raw.PK.Replace("EVENT#", ""),
+            int.Parse(raw.SK.Replace("TICKET#", "")),
+            Enum.Parse<TicketState>(raw.Status)
+        );
+    }
+}
 
 public class TicketUpdateWorker : BackgroundService
 {
@@ -66,14 +96,42 @@ public class TicketUpdateWorker : BackgroundService
     {
         _logger.LogDebug("Worker Message: {message}", message.Body);
 
-        var eventId = GetEventIdFromJson(message.Body);
-        //var ticketId = GetTicketIdFromJson(message.Body);
+        try
+        {
+            var msg = message.Body.ToQueueMessage();
 
-        await _cache.InvalidateEventCache(eventId);
-        using var scope = _scopeFactory.CreateScope();
-        var ticketRepository = scope.ServiceProvider.GetRequiredService<ITicketRepository>();
-        await NotifyHub("TicketUpdated", eventId, stoppingToken);
-        await _sqs.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken);
+            using var scope = _scopeFactory.CreateScope();
+            var ticketRepository = scope.ServiceProvider.GetRequiredService<ITicketRepository>();
+            Task.WaitAll
+            (
+                _cache.InvalidateEventCache(msg.EventId),
+                NotifyHub("TicketUpdated", msg.EventId, stoppingToken),
+                _sqs.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken)
+            );
+            NotifyTelemetry(msg);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("Error processing message: {message} :: {error}", message.Body, e.Message);
+            //UNDONE: DLQ
+        }
+    }
+
+    private void NotifyTelemetry(QueueMessage msg)
+    {
+        Counter<long> counter = msg.State switch
+        {
+            TicketState.Reserved => TelemetryConfig.ReservedCounter,
+            TicketState.Confirmed => TelemetryConfig.ConfirmedCounter,
+            TicketState.Available => TelemetryConfig.CanceledCounter
+        };
+        counter.Add(1, new TagList { { "event.name", msg.EventId }, { "status", "success" } });
+        /*
+        TelemetryConfig.TicketMeter.CreateObservableGauge("sqs.queue.size",
+            () => GetQueueSizeFromLocalStack(), // Função que consulta o LocalStack
+            "Mensagens",
+            "Quantidade de mensagens pendentes na fila");
+        */
     }
 
     private async Task NotifyHub(string message, string eventId, CancellationToken stoppingToken)
@@ -82,17 +140,4 @@ public class TicketUpdateWorker : BackgroundService
         await _hubContext.Clients.All.SendAsync(message, eventId, stoppingToken);
     }
 
-    public static string GetEventIdFromJson(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        var pk = doc.RootElement.GetProperty("PK").GetString() ?? "";
-        return pk.Replace("EVENT#", "");
-    }
-
-    public static int GetTicketIdFromJson(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        var sk = doc.RootElement.GetProperty("SK").GetString() ?? "";
-        return int.TryParse(sk.Replace("TICKET#", ""), out var result)? result : 0;
-    }
 }

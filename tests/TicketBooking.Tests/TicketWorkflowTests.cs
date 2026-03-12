@@ -55,19 +55,32 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         return Task.CompletedTask;
     }
 
-    [Theory]
-    [InlineData("{\"PK\": \"EVENT#rock-in-rio\", \"SK\": \"TICKET#1\"}", "rock-in-rio")]
-    [InlineData("{\"PK\": \"EVENT#woodstock\"}", "woodstock")]
-    [InlineData("{\"PK\": \"EVENT#\"}", "")]
-    public void Worker_ShouldExtractCorrectEventId(string jsonInput, string expectedEventId)
+    [Fact]
+    public void Worker_ShouldGetMessageTranslatedCorrectly()
     {
+        // Arrange
+        const string json1 = "{\"PK\": \"EVENT#Lok In Rio\",\"SK\": \"TICKET#2\",\"Status\": \"Reserved\"}";
+        const string json2 = "{\"PK\": \"EVENT#Loky In Rio\",\"SK\": \"TICKET#32\",\"Status\": \"Confirmed\"}";
+        const string json3 = "{\"PK\": \"EVENT#Lóke In Rio\",\"SK\": \"TICKET#64\",\"Status\": \"Available\"}";
+
         // Act
-        var result = TicketUpdateWorker.GetEventIdFromJson(jsonInput);
+        var msg1 = json1.ToQueueMessage();
+        var msg2 = json2.ToQueueMessage();
+        var msg3 = json3.ToQueueMessage();
 
         // Assert
-        result.Should().Be(expectedEventId);
+        msg1.EventId.Should().Be("Lok In Rio");
+        msg1.TicketId.Should().Be(2);
+        msg1.State.Should().Be(TicketState.Reserved);
+        msg2.EventId.Should().Be("Loky In Rio");
+        msg2.TicketId.Should().Be(32);
+        msg2.State.Should().Be(TicketState.Confirmed);
+        msg3.EventId.Should().Be("Lóke In Rio");
+        msg3.TicketId.Should().Be(64);
+        msg3.State.Should().Be(TicketState.Available);
     }
 
+    /*
     [Theory]
     [InlineData("{\"PK\": \"EVENT#rock-in-rio\", \"SK\": \"TICKET#256\"}", 256)]
     [InlineData("{\"PK\": \"EVENT#woodstock\", \"SK\": \"TICKET#666\"}", 666)]
@@ -80,6 +93,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         // Assert
         result.Should().Be(expectedEventId);
     }
+    */
 
     [Fact]
     public async Task WhenReservationExpires_ShouldCancel()
@@ -126,7 +140,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         // Arrange
         const string eventId = "rock-in-rio-1985";
         const int ticketId = 16;
-        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"{ticketId}\"}}";
+        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"{ticketId}\",\"Status\": \"Reserved\"}}";
         const string handleMock = "fake-handle-123";
         var message = new Message
         {
@@ -232,8 +246,8 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         Func<Task> act = async () => await worker.ProcessMessage(message, TestContext.Current.CancellationToken);
 
         // Assert
-        // Error was caught?
-        await act.Should().ThrowAsync<System.Text.Json.JsonException>();
+        // Error was caught && logged && that's it!
+        // await act.Should().ThrowAsync<System.Text.Json.JsonException>();
 
         // Message should not be deleted on error
         mockSqs.Verify(x => x.DeleteMessageAsync(
@@ -256,7 +270,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         // Arrange
         const string eventId = "monsters-of-rock";
         const int ticketId = 512;
-        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\"}}";
+        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\",\"Status\": \"Reserved\"}}";
         const string handleMock = "fake-handle-123";
         var message = new Message
         {
