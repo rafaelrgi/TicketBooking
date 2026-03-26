@@ -1,12 +1,12 @@
 using System.Text.Json;
-using Amazon.SQS;
-using Amazon.SQS.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using Microsoft.Extensions.Options;
+using TicketBooking.Application.Dtos;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
 using TicketBooking.Application.Interfaces;
+using TicketBooking.Domain.Common;
 using TicketBooking.Domain.Constants;
 using TicketBooking.Domain.Settings;
 
@@ -51,31 +51,31 @@ public static class TicketApi
         return Results.Ok(tickets);
     }
 
-    private static async Task<IResult> ConfirmTicket(ConfirmationRequest request, IOptions<SettingsUrls> settingsUrls,
-        IAmazonSQS queue, ITicketRepository repository, ITicketCacheService cache, ILoggerFactory loggerFactory)
+    private static async Task<IResult> ConfirmTicket(ConfirmationRequest request, ITicketRepository repository,
+        ITicketCacheService cache, ILoggerFactory loggerFactory, IServiceBus serviceBus, IOptions<SettingsUrls> settingsUrls
+    )
     {
         var logger = loggerFactory.CreateLogger("TicketApi");
 
         var ticket = await repository.GetTicket(request.EventId, request.TicketId);
-        if (ticket is not { Status: "Reserved" })
+        if (ticket is not { Status: TicketStatus.Reserved })
             return Results.NotFound("Ticket not found");
 
-        ticket.Status = "Confirmed";
+        ticket.Status = TicketStatus.Confirmed;
         ticket.UpdatedAt = DateTime.UtcNow;
         var success = await repository.ConfirmTicket(ticket);
         await cache.InvalidateEventCache(request.EventId);
-        await NotifyQueue(ticket, "Confirmed", queue, settingsUrls, logger);
+        await NotifyQueue(ticket, TicketStatus.Confirmed, serviceBus, logger);
 
         return success
             ? Results.Ok(new { message = "Confirmation saved" })
             : Results.BadRequest("Error saving Confirmation");
     }
 
-    private static async Task<IResult> ReserveTicket(ReservationRequest request,
-        ITicketRepository repository, IEventRepository eventRepository,
-        IAmazonStepFunctions stepFunctions, IAmazonSQS queue, ITicketCacheService cache,
-        IOptions<SettingsAws> settingsAws, IOptions<SettingsUrls> settingsUrls,
-        ILoggerFactory loggerFactory, JsonSerializerOptions jsonOpt)
+    private static async Task<IResult> ReserveTicket(ReservationRequest request, ITicketRepository repository,
+        IEventRepository eventRepository, IAmazonStepFunctions stepFunctions, ITicketCacheService cache,
+        IServiceBus serviceBus, IOptions<SettingsAws> settingsAws, IOptions<SettingsUrls> settingsUrls,
+        ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("TicketApi");
 
@@ -90,42 +90,37 @@ public static class TicketApi
             EventId = request.EventId,
             TicketId = request.TicketId,
             UserId = request.UserId,
-            Status = "Reserved",
+            Status = TicketStatus.Reserved,
             IsVip = request.IsVip,
             UpdatedAt = DateTime.UtcNow
         };
 
         var success = await repository.ReserveTicket(ticket);
         await cache.InvalidateEventCache(request.EventId);
-        await NotifyQueue(ticket, "Reserved", queue, settingsUrls, logger);
-        var cancelFlow = await StartReservationFlow(stepFunctions, ticket, settingsAws, logger, jsonOpt);
+        await NotifyQueue(ticket, TicketStatus.Reserved, serviceBus, logger);
+        var cancelFlow = await StartReservationFlow(stepFunctions, ticket, settingsAws, logger);
 
         return success
             ? Results.Ok(new { message = "Reservation saved" })
             : Results.BadRequest("Error saving Reservation");
     }
 
-    private static async Task NotifyQueue(Ticket ticket, string status, IAmazonSQS queue,
-        IOptions<SettingsUrls> settingsUrls, ILogger logger)
+    private static async Task NotifyQueue(Ticket ticket, TicketStatus status, IServiceBus serviceBus, ILogger logger)
     {
-        var message = new
-        {
-            PK = $"EVENT#{ticket.EventId}",
-            SK = $"TICKET#{ticket.TicketId}",
-            Status = status
-        };
+        var message = new TicketMessageDto
+        (
+            $"EVENT#{ticket.EventId}",
+            $"TICKET#{ticket.TicketId}",
+            status
+        );
+        await serviceBus.Publish(message);
 
-        await queue.SendMessageAsync(new SendMessageRequest
-        {
-            QueueUrl = settingsUrls.Value.TicketUpdatesQueue,
-            MessageBody = JsonSerializer.Serialize(message)
-        });
         logger.LogDebug("NotifyQueue {ticket.EventId}.{ticket.TicketId} = {status}", ticket.EventId, ticket.TicketId,
             status);
     }
 
     private static async Task<StartExecutionResponse> StartReservationFlow(IAmazonStepFunctions stepFunctions, Ticket ticket,
-        IOptions<SettingsAws> settingsAws, ILogger logger, JsonSerializerOptions jsonOpt)
+        IOptions<SettingsAws> settingsAws, ILogger logger)
     {
         var startRequest = new StartExecutionRequest
         {
@@ -135,7 +130,7 @@ public static class TicketApi
                 PK = $"EVENT#{ticket.EventId}",
                 SK = $"TICKET#{ticket.TicketId}",
                 status = "Canceled"
-            }, jsonOpt) ?? "{}"
+            }, JsonDefaults.Options) ?? "{}"
         };
         logger.LogDebug("StartReservationFlow {arn}", startRequest.StateMachineArn);
         return await stepFunctions.StartExecutionAsync(startRequest);

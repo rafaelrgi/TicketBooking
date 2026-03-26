@@ -1,13 +1,16 @@
 using Amazon.DynamoDBv2;
 using Amazon.SQS;
 using Amazon.StepFunctions;
+using TicketBooking.Domain.Interfaces;
 using TicketBooking.Domain.Settings;
+using TicketBooking.Infra.Adapters;
 
 namespace TicketBooking.Api.Infra;
 
 public static class AwsExtensions
 {
-    public static IServiceCollection AddAws(this IServiceCollection services, IConfiguration config,  IWebHostEnvironment environment)
+    public static IServiceCollection AddAws(this IServiceCollection services, IConfiguration config,
+        IWebHostEnvironment environment)
     {
         var settingsAws = config.GetSection(SettingsAws.SectionName).Get<SettingsAws>();
         if (settingsAws == null)
@@ -53,13 +56,18 @@ public static class AwsExtensions
                 return new AmazonStepFunctionsClient(credentials, cfg);
             });
         }
+        //! IsDevelopment
         else
         {
             services.AddAWSService<IAmazonDynamoDB>();
+            services.AddAWSService<IAmazonSQS>();
             services.AddAWSService<IAmazonStepFunctions>();
         }
 
         services.AddDefaultAWSOptions(awsOptions);
+
+        var queueUrl = settingsAws.TicketUpdatesQueue  ?? "";
+        services.AddSingleton<IServiceBus>(sp => new SqsServiceBus(sp.GetRequiredService<IAmazonSQS>(), queueUrl));
 
         return services;
     }

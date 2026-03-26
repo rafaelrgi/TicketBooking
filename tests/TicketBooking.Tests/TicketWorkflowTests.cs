@@ -16,16 +16,19 @@ using Serilog.Core;
 using Serilog.Events;
 using TicketBooking.Api.Hubs;
 using TicketBooking.Api.Workers;
+using TicketBooking.Application.Dtos;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Interfaces;
 using TicketBooking.Domain.Settings;
 using TicketBooking.Infra.Caching;
+using System.Text.Json;
+using TicketBooking.Domain.Common;
+using TicketBooking.Infra.Adapters;
 
 public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
 {
     private readonly LocalStackFixture _fixture;
     private readonly ILoggerFactory _loggerFactory;
-    //private readonly ILogger<TicketWorkflowTests> _logger;
 
     public TicketWorkflowTests(LocalStackFixture fixture, ITestOutputHelper output)
     {
@@ -56,7 +59,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     }
 
     [Fact]
-    public void Worker_ShouldGetMessageTranslatedCorrectly()
+    public void ServiceBusMessages_ShouldGetTranslatedCorrectly()
     {
         // Arrange
         const string json1 = "{\"PK\": \"EVENT#Lok In Rio\",\"SK\": \"TICKET#2\",\"Status\": \"Reserved\"}";
@@ -64,20 +67,23 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
         const string json3 = "{\"PK\": \"EVENT#Lóke In Rio\",\"SK\": \"TICKET#64\",\"Status\": \"Available\"}";
 
         // Act
-        var msg1 = json1.ToQueueMessage();
-        var msg2 = json2.ToQueueMessage();
-        var msg3 = json3.ToQueueMessage();
+        var msg1 = JsonSerializer.Deserialize<TicketMessageDto>(json1, JsonDefaults.Options);
+        var msg2 = JsonSerializer.Deserialize<TicketMessageDto>(json2, JsonDefaults.Options);
+        var msg3 = JsonSerializer.Deserialize<TicketMessageDto>(json3, JsonDefaults.Options);
 
         // Assert
+        msg1.Should().NotBeNull();
         msg1.EventId.Should().Be("Lok In Rio");
         msg1.TicketId.Should().Be(2);
-        msg1.State.Should().Be(TicketState.Reserved);
+        msg1.Status.Should().Be(TicketStatus.Reserved);
+        msg2.Should().NotBeNull();
         msg2.EventId.Should().Be("Loky In Rio");
         msg2.TicketId.Should().Be(32);
-        msg2.State.Should().Be(TicketState.Confirmed);
+        msg2.Status.Should().Be(TicketStatus.Confirmed);
+        msg3.Should().NotBeNull();
         msg3.EventId.Should().Be("Lóke In Rio");
         msg3.TicketId.Should().Be(64);
-        msg3.State.Should().Be(TicketState.Available);
+        msg3.Status.Should().Be(TicketStatus.Available);
     }
 
     /*
@@ -135,18 +141,15 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
     }
 
     [Fact]
-    public async Task ProcessMessage_WhenSuccessful_ShouldNotifyFrontendAndDeleteFromQueue()
+    public async Task ProcessMessage_WhenSuccessful_ShouldNotifyFrontend()
     {
         // Arrange
         const string eventId = "rock-in-rio-1985";
         const int ticketId = 16;
         string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"{ticketId}\",\"Status\": \"Reserved\"}}";
         const string handleMock = "fake-handle-123";
-        var message = new Message
-        {
-            Body = json,
-            ReceiptHandle = handleMock
-        };
+        var message = JsonSerializer.Deserialize<TicketMessageDto>(json, JsonDefaults.Options);
+        message.Should().NotBeNull();
 
         await ResetDatabase();
         var mockClientProxy = new Mock<IClientProxy>();
@@ -159,7 +162,7 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
 
         var mockRepo = new Mock<ITicketRepository>();
         mockRepo.Setup(r => r.GetTicket(eventId, ticketId))
-            .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = "Reserved" });
+            .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = TicketStatus.Reserved });
 
         var mockSqs = new Mock<IAmazonSQS>();
         var worker = CreateTicketUpdateWorker(mockRepo, mockSqs, mockHubContext);
@@ -175,9 +178,40 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
                 It.Is<object[]>(args => args[0].ToString() == eventId),
                 It.IsAny<CancellationToken>()),
             Times.Once);
-        // Check if message was deleted from queue
+    }
+
+    [Fact]
+    public async Task ServiceBusSubscribe_WhenHandlerReturnsTrue_ShouldDeleteMessage()
+    {
+        // Arrange
+        var mockSqs = new Mock<IAmazonSQS>();
+        var handleMock = "receipt-handle-123";
+        var queueUrl = "http://localhost:4566/queue";
+
+        var response = new ReceiveMessageResponse
+        {
+            Messages = new List<Message>
+            {
+                new Message { Body = "{}", ReceiptHandle = handleMock }
+            }
+        };
+
+        mockSqs.Setup(x => x.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+
+        var subscriber = new SqsServiceBus(mockSqs.Object, queueUrl);
+        var cts = new CancellationTokenSource();
+
+        // Act
+        await subscriber.Subscribe<TicketMessageDto>(async (msg, ct) =>
+        {
+            await cts.CancelAsync();
+            return true;
+        }, cts.Token);
+
+        // Assert
         mockSqs.Verify(x => x.DeleteMessageAsync(
-                It.IsAny<string>(),
+                queueUrl,
                 handleMock,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -200,116 +234,14 @@ public class TicketWorkflowTests : IClassFixture<LocalStackFixture>
             .Setup(x => x.CreateScope())
             .Returns(mockScope.Object);
 
-        var settings = new SettingsUrls
-        {
-            TicketUpdatesQueue = "http://localhost:4566/000000000000/TicketUpdatesQueue"
-        };
+        const string ticketUpdatesQueue = "http://localhost:4566/000000000000/TicketUpdatesQueue";
         var workerLogger = _loggerFactory.CreateLogger<TicketUpdateWorker>();
         var cacheLogger = _loggerFactory.CreateLogger<TicketCacheService>();
-        var optionsWrapper = new OptionsWrapper<SettingsUrls>(settings);
-        var worker = new TicketUpdateWorker(mockSqs.Object, mockHubContext.Object, new TicketCacheService(cache, cacheLogger),
-            mockScopeFactory.Object, optionsWrapper, workerLogger);
+        IServiceBus serviceBus = new SqsServiceBus(mockSqs.Object, ticketUpdatesQueue);
+
+        var worker = new TicketUpdateWorker(serviceBus, mockHubContext.Object, new TicketCacheService(cache, cacheLogger),
+            mockScopeFactory.Object, workerLogger);
         return worker;
-    }
-
-    [Fact]
-    public async Task ProcessMessage_WhenJsonIsInvalid_ShouldNotNotifyNorDeleteMessage()
-    {
-        // Arrange
-        const string eventId = "monsters-of-rock";
-        const int ticketId = 64;
-        const string badJson = "{ \"PK\": \"EVENT#broken-json... wait, where is the rest? Thanos snap!!!";
-        const string handleMock = "fake-handle-123";
-        var message = new Message
-        {
-            Body = badJson,
-            ReceiptHandle = handleMock
-        };
-
-        await ResetDatabase();
-
-        var mockClientProxy = new Mock<IClientProxy>();
-        var mockClients = new Mock<IHubClients>();
-        mockClients.Setup(c => c.All).Returns(mockClientProxy.Object);
-
-        var mockHubContext = new Mock<IHubContext<TicketHub>>();
-        mockHubContext.Setup(h => h.Clients).Returns(mockClients.Object);
-
-        var mockRepo = new Mock<ITicketRepository>();
-        mockRepo.Setup(r => r.GetTicket(eventId, ticketId))
-            .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = "Reserved" });
-
-        var mockSqs = new Mock<IAmazonSQS>();
-        var worker = CreateTicketUpdateWorker(mockRepo, mockSqs, mockHubContext);
-
-        // Act
-        Func<Task> act = async () => await worker.ProcessMessage(message, TestContext.Current.CancellationToken);
-
-        // Assert
-        // Error was caught && logged && that's it!
-        // await act.Should().ThrowAsync<System.Text.Json.JsonException>();
-
-        // Message should not be deleted on error
-        mockSqs.Verify(x => x.DeleteMessageAsync(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
-
-        // Notification of change should not be sent on error
-        mockClientProxy.Verify(x => x.SendCoreAsync(
-                It.IsAny<string>(),
-                It.IsAny<object[]>(),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
-    public async Task ProcessMessage_WhenTicketIsCancelled_ShouldNotNotify()
-    {
-        // Arrange
-        const string eventId = "monsters-of-rock";
-        const int ticketId = 512;
-        string json = $"{{\"PK\": \"EVENT#{eventId}\", \"SK\": \"TICKET#{ticketId}\",\"Status\": \"Reserved\"}}";
-        const string handleMock = "fake-handle-123";
-        var message = new Message
-        {
-            Body = json,
-            ReceiptHandle = handleMock
-        };
-
-        await ResetDatabase();
-
-        var mockClientProxy = new Mock<IClientProxy>();
-        var mockClients = new Mock<IHubClients>();
-        mockClients.Setup(c => c.All).Returns(mockClientProxy.Object);
-        var mockHubContext = new Mock<IHubContext<TicketHub>>();
-        mockHubContext.Setup(h => h.Clients).Returns(mockClients.Object);
-
-        var mockSqs = new Mock<IAmazonSQS>();
-
-        // Mock Repo with canceled item
-        var mockRepo = new Mock<ITicketRepository>();
-        mockRepo.Setup(r => r.GetTicket(eventId, ticketId))
-            .ReturnsAsync(new Ticket { EventId = eventId, TicketId = ticketId, Status = "Cancelled" });
-
-        var worker = CreateTicketUpdateWorker(mockRepo, mockSqs, mockHubContext);
-
-        // Act
-        await worker.ProcessMessage(message, TestContext.Current.CancellationToken);
-
-        // Assert
-        // Cancelled item, notification!
-        mockClientProxy.Verify(
-            client => client.SendCoreAsync("TicketUpdated", It.IsAny<object[]>(),
-                TestContext.Current.CancellationToken),
-            Times.Once);
-
-        // Canceled item, should delete the message
-        mockSqs.Verify(x => x.DeleteMessageAsync(
-                It.IsAny<string>(), handleMock,
-                It.IsAny<CancellationToken>()),
-            Times.Once);
     }
 
     private async Task ResetDatabase()

@@ -217,11 +217,11 @@ else
         }
     }
 
-    private static MudBlazor.Color GetStatusColor(string status) => status switch
+    private static MudBlazor.Color GetStatusColor(TicketStatus status) => status switch
     {
-        "Reserved" => Color.Warning,
-        "Available" => Color.Info,
-        "Confirmed" => Color.Success,
+        TicketStatus.Reserved => Color.Warning,
+        TicketStatus.Available => Color.Info,
+        TicketStatus.Confirmed => Color.Success,
         _ => Color.Default
     };
 

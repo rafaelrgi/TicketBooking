@@ -7,6 +7,7 @@ using Amazon.DynamoDBv2.Model;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using TicketBooking.Domain.Common;
 using TicketBooking.Domain.Constants;
 using TicketBooking.Domain.Entities;
 using TicketBooking.Domain.Settings;
@@ -23,7 +24,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
     {
         var urls = factory.Services.GetRequiredService<IOptions<SettingsUrls>>().Value;
         _client = factory.CreateClient();
-        _client.BaseAddress = new  Uri(urls.ApiBase);
+        _client.BaseAddress = new Uri(urls.ApiBase);
 
         _dynamoDb = factory.Services.GetRequiredService<IAmazonDynamoDB>();
         _factory = factory;
@@ -47,12 +48,13 @@ public class TicketApiTests : IClassFixture<ApiFactory>
 
         // Act
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
-        var response = await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
+        var response =
+            await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
-        var tickets =
-            await response.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken);
+        var tickets = await response.Content.ReadFromJsonAsync<List<Ticket>>(
+            cancellationToken: TestContext.Current.CancellationToken, options: JsonDefaults.Options);
 
         Assert.NotNull(tickets);
         Assert.NotEmpty(tickets);
@@ -65,7 +67,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         // Arrange:
         await ResetDatabaseAndCache();
         const string eventId = "Loki in rio";
-        const string status = "Confirmed";
+        const TicketStatus status = TicketStatus.Confirmed;
         const int eventQuota = 1024;
 
         var evt = await CreateEventApi(eventId, eventQuota);
@@ -84,19 +86,20 @@ public class TicketApiTests : IClassFixture<ApiFactory>
 
         // Act
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme");
-        var response = await _client.PostAsync($"{ApiRoutes.Tickets.ReserveTicket}", content, TestContext.Current.CancellationToken);
+        var response = await _client.PostAsync($"{ApiRoutes.Tickets.ReserveTicket}", content,
+            TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
         response = await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var tickets =
-            await response.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken);
+        var tickets = await response.Content.ReadFromJsonAsync<List<Ticket>>(
+            cancellationToken: TestContext.Current.CancellationToken, options: JsonDefaults.Options);
 
         Assert.NotNull(tickets);
         Assert.NotEmpty(tickets);
         Assert.All(tickets, t => Assert.Equal(eventId, t.EventId));
-        Assert.All(tickets, t => Assert.Equal("Reserved", t.Status));
+        Assert.All(tickets, t => Assert.Equal(TicketStatus.Reserved, t.Status));
     }
 
     [Fact]
@@ -123,13 +126,17 @@ public class TicketApiTests : IClassFixture<ApiFactory>
         // Assert
         response.EnsureSuccessStatusCode();
 
-        var getResponse = await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
+        var getResponse =
+            await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
         var tickets =
-            await getResponse.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken);
+            await getResponse.Content.ReadFromJsonAsync<List<Ticket>>(cancellationToken: TestContext.Current.CancellationToken,
+                options: JsonDefaults.Options
+            );
+
         Assert.NotNull(tickets);
         var confirmedTicket = tickets.FirstOrDefault(t => t.TicketId == ticketId);
 
-        Assert.Equal("Confirmed", confirmedTicket?.Status);
+        Assert.Equal(TicketStatus.Confirmed, confirmedTicket?.Status);
 
         // buy some time for the worker
         await Task.Delay(2000, TestContext.Current.CancellationToken);
@@ -155,17 +162,19 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             TicketId = ticketIdReserve,
             UserId = "Gort",
             IsVip = true,
-            Status = "xxx",
+            Status = TicketStatus.Confirmed,
             UpdatedAt = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
-        var responseReserve = await _client.PostAsync(ApiRoutes.Tickets.ReserveTicket, content, TestContext.Current.CancellationToken);
+        var responseReserve =
+            await _client.PostAsync(ApiRoutes.Tickets.ReserveTicket, content, TestContext.Current.CancellationToken);
         Assert.True(responseReserve.IsSuccessStatusCode);
 
         // Act
         ticket.TicketId = ticketIdConfirm;
         content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
-        var responseConfirm = await _client.PostAsync(ApiRoutes.Tickets.ConfirmTicket, content, TestContext.Current.CancellationToken);
+        var responseConfirm =
+            await _client.PostAsync(ApiRoutes.Tickets.ConfirmTicket, content, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(responseConfirm.IsSuccessStatusCode);
@@ -184,7 +193,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             TicketId = 1,
             UserId = "Gort",
             IsVip = true,
-            Status = "xxx",
+            Status = TicketStatus.Reserved,
             UpdatedAt = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
@@ -196,7 +205,8 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             content,
             TestContext.Current.CancellationToken);
 
-        var responseGet = await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
+        var responseGet =
+            await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(responseReserve.IsSuccessStatusCode);
@@ -220,7 +230,7 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             TicketId = eventQuota + 1,
             UserId = "Gort",
             IsVip = true,
-            Status = "xxx",
+            Status = TicketStatus.Confirmed,
             UpdatedAt = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
@@ -232,7 +242,8 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             content,
             TestContext.Current.CancellationToken);
 
-        var responseGet = await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
+        var responseGet =
+            await _client.GetAsync($"{ApiRoutes.Tickets.GetTickets}{eventId}", TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(responseReserve.IsSuccessStatusCode);
@@ -262,15 +273,17 @@ public class TicketApiTests : IClassFixture<ApiFactory>
             TicketId = freeTicket,
             UserId = "Gort",
             IsVip = true,
-            Status = "xxx",
+            Status = TicketStatus.Confirmed,
             UpdatedAt = DateTime.UtcNow
         };
         var content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
-        var responseFree = await _client.PostAsync(ApiRoutes.Tickets.ReserveTicket, content, TestContext.Current.CancellationToken);
+        var responseFree =
+            await _client.PostAsync(ApiRoutes.Tickets.ReserveTicket, content, TestContext.Current.CancellationToken);
 
         ticket.TicketId = reservedTicket;
         content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
-        var responseReserved = await _client.PostAsync(ApiRoutes.Tickets.ReserveTicket, content, TestContext.Current.CancellationToken);
+        var responseReserved =
+            await _client.PostAsync(ApiRoutes.Tickets.ReserveTicket, content, TestContext.Current.CancellationToken);
 
         ticket.TicketId = confirmedTicket;
         content = new StringContent(JsonSerializer.Serialize(ticket), Encoding.UTF8, "application/json");
@@ -336,7 +349,8 @@ public class TicketApiTests : IClassFixture<ApiFactory>
 
         foreach (var item in scan.Items)
         {
-            var key = new Dictionary<string, AttributeValue> {
+            var key = new Dictionary<string, AttributeValue>
+            {
                 { partitionKey, item[partitionKey] }
             };
             if (sortKey != null) key.Add(sortKey, item[sortKey]);

@@ -14,6 +14,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.LocalStack;
 using Testcontainers.Redis;
+using TicketBooking.Domain.Interfaces;
+using TicketBooking.Domain.Settings;
+using TicketBooking.Infra.Adapters;
 
 namespace TicketBooking.Tests.Integration;
 
@@ -25,71 +28,83 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        var awsConnectionString = _localStack.GetConnectionString();
-
-        builder.UseContentRoot(AppContext.BaseDirectory);
-        builder.ConfigureAppConfiguration((context, config) =>
+        try
         {
-            config.SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddEnvironmentVariables();
+            var awsConnectionString = _localStack.GetConnectionString();
 
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            builder.UseContentRoot(AppContext.BaseDirectory);
+            builder.ConfigureAppConfiguration((context, config) =>
             {
-                ["Urls:TicketUpdatesQueue"] = $"{awsConnectionString}/000000000000/TicketUpdatesQueue",
+                config.SetBasePath(AppContext.BaseDirectory)
+                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                    .AddEnvironmentVariables();
 
-                ["SqsSettings:QueueUrl"] = awsConnectionString + "/000000000000/TicketUpdatesQueue",
-
-                ["Aws:TicketWorkflowArn"] = "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow",
-                ["Aws:Region"] = "sa-east-1",
-                ["Aws:ServiceURL"] = _localStack.GetConnectionString()
+                var ticketUpdatesQueue = $"{SettingsAws.SectionName}:{nameof(SettingsAws.TicketUpdatesQueue)}";
+                var serviceUrl = $"{SettingsAws.SectionName}:{nameof(SettingsAws.ServiceUrl)}";
+                var ticketWorkflowArn = $"{SettingsAws.SectionName}:{nameof(SettingsAws.TicketWorkflowArn)}";
+                var region = $"{SettingsAws.SectionName}:{nameof(SettingsAws.Region)}";
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    //["SqsSettings:QueueUrl"] = awsConnectionString + "/000000000000/TicketUpdatesQueue",
+                    [ticketWorkflowArn] = "arn:aws:states:sa-east-1:000000000000:stateMachine:TicketBookingWorkflow",
+                    [region] = "sa-east-1",
+                    [ticketUpdatesQueue] = $"{awsConnectionString}/000000000000/TicketUpdatesQueue",
+                    [serviceUrl] = _localStack.GetConnectionString()
+                });
             });
-        });
-        builder.UseEnvironment("Testing");
+            builder.UseEnvironment("Testing");
 
-        builder.ConfigureTestServices(services =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IAmazonDynamoDB>();
+                services.RemoveAll<IAmazonSQS>();
+
+                services.AddSingleton<IAmazonDynamoDB>(sp =>
+                {
+                    var config = new AmazonDynamoDBConfig { ServiceURL = awsConnectionString };
+                    return new AmazonDynamoDBClient(new BasicAWSCredentials("test", "test"), config);
+                });
+
+                services.AddSingleton<IAmazonSQS>(sp =>
+                {
+                    var config = new AmazonSQSConfig { ServiceURL = awsConnectionString };
+                    return new AmazonSQSClient(new BasicAWSCredentials("test", "test"), config);
+                });
+                var queueUrl = $"{awsConnectionString}/000000000000/TicketUpdatesQueue";
+                services.AddSingleton<IServiceBus>(sp => new SqsServiceBus(sp.GetRequiredService<IAmazonSQS>(), queueUrl));
+
+                var redisConnectionString = _redisCache.GetConnectionString();
+                services.AddStackExchangeRedisCache(options => { options.Configuration = redisConnectionString; });
+
+                services.RemoveAll<IAmazonStepFunctions>();
+                services.AddSingleton<IAmazonStepFunctions>(sp =>
+                {
+                    var config = new AmazonStepFunctionsConfig
+                    {
+                        ServiceURL = awsConnectionString,
+                        AuthenticationRegion = "sa-east-1"
+                    };
+                    return new AmazonStepFunctionsClient(new BasicAWSCredentials("test", "test"), config);
+                });
+
+                // Remove the real auth config
+                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(AuthenticationOptions));
+                if (descriptor != null) services.Remove(descriptor);
+                // Add the mocked auth config
+                services.AddAuthentication(options =>
+                    {
+                        options.DefaultAuthenticateScheme = "TestScheme";
+                        options.DefaultChallengeScheme = "TestScheme";
+                    })
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                        "TestScheme", options => { });
+            });
+        }
+        catch (Exception ex)
         {
-            services.RemoveAll<IAmazonDynamoDB>();
-            services.RemoveAll<IAmazonSQS>();
-
-            services.AddSingleton<IAmazonDynamoDB>(sp =>
-            {
-                var config = new AmazonDynamoDBConfig { ServiceURL = awsConnectionString };
-                return new AmazonDynamoDBClient(new BasicAWSCredentials("test", "test"), config);
-            });
-
-            services.AddSingleton<IAmazonSQS>(sp =>
-            {
-                var config = new AmazonSQSConfig { ServiceURL = awsConnectionString };
-                return new AmazonSQSClient(new BasicAWSCredentials("test", "test"), config);
-            });
-
-            var redisConnectionString = _redisCache.GetConnectionString();
-            services.AddStackExchangeRedisCache(options => { options.Configuration = redisConnectionString; });
-
-            services.RemoveAll<IAmazonStepFunctions>();
-            services.AddSingleton<IAmazonStepFunctions>(sp =>
-            {
-                var config = new AmazonStepFunctionsConfig
-                {
-                    ServiceURL = awsConnectionString,
-                    AuthenticationRegion = "sa-east-1"
-                };
-                return new AmazonStepFunctionsClient(new BasicAWSCredentials("test", "test"), config);
-            });
-
-            // Remove the real auth config
-            var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(AuthenticationOptions));
-            if (descriptor != null) services.Remove(descriptor);
-            // Add the mocked auth config
-            services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = "TestScheme";
-                    options.DefaultChallengeScheme = "TestScheme";
-                })
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                    "TestScheme", options => { });
-        });
+            Console.WriteLine($"ERROR ConfigureWebHost: {ex.Message}");
+            throw;
+        }
     }
 
     public async ValueTask InitializeAsync()
@@ -145,7 +160,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         var definitionPath = Path.GetFullPath(Path.Combine(binDir, "../../../../../infra/workflow-definition.json"));
 
         if (!File.Exists(definitionPath))
-            throw new FileNotFoundException($"ASL Definition não encontrada: {definitionPath}");
+            throw new FileNotFoundException($"ASL Definition not found: {definitionPath}");
 
         var aslDefinition = await File.ReadAllTextAsync(definitionPath);
 

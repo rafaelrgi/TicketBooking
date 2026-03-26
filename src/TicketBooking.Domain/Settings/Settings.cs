@@ -23,6 +23,7 @@ public class SettingsAws
     public string? ServiceUrl { get; set; }
     public string? Region { get; set; }
     public string? TicketWorkflowArn { get; set; }
+    public string? TicketUpdatesQueue { get; set; }
 }
 
 public class SettingsAuth
