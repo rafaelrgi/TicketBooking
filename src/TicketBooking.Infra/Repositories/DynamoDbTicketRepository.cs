@@ -17,71 +17,71 @@ public class DynamoDbTicketRepository : ITicketRepository
 
     public async Task<bool> ReserveTicket(Ticket ticket)
     {
-       var request = new UpdateItemRequest
-       {
-           TableName = "Tickets",
-           Key = new Dictionary<string, AttributeValue>
-           {
-               { "PK", new AttributeValue { S = $"EVENT#{ticket.EventId}" } },
-               { "SK", new AttributeValue { S = $"TICKET#{ticket.TicketId}" } }
-           },
-           UpdateExpression = "SET #s = :reserved, #c2 = :v2, UpdatedAt = :now",
-           ConditionExpression = "attribute_not_exists(#s) OR #s = :available",
-           ExpressionAttributeNames = new Dictionary<string, string>
-           {
-               { "#s", "Status" },
-               { "#c2", "IsVip" }
-           },
-           ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-           {
-               { ":reserved", new AttributeValue { S = "Reserved" } },
-               { ":available", new AttributeValue { S = "Available" } },
-               { ":v2", new AttributeValue { BOOL = ticket.IsVip } },
-               { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
-           }
-       };
+        var request = new UpdateItemRequest
+        {
+            TableName = "Tickets",
+            Key = new Dictionary<string, AttributeValue>
+            {
+                { "PK", new AttributeValue { S = $"EVENT#{ticket.EventId}" } },
+                { "SK", new AttributeValue { S = $"TICKET#{ticket.TicketId}" } }
+            },
+            UpdateExpression = "SET #s = :reserved, #c2 = :v2, UpdatedAt = :now",
+            ConditionExpression = "attribute_not_exists(#s) OR #s = :available",
+            ExpressionAttributeNames = new Dictionary<string, string>
+            {
+                { "#s", "Status" },
+                { "#c2", "IsVip" }
+            },
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":reserved", new AttributeValue { S = "Reserved" } },
+                { ":available", new AttributeValue { S = "Available" } },
+                { ":v2", new AttributeValue { BOOL = ticket.IsVip } },
+                { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
+            }
+        };
 
-       try
-       {
-           await _dynamoDb.UpdateItemAsync(request);
-           return true;
-       }
-       catch (ConditionalCheckFailedException)
-       {
-           return false;
-       }
+        try
+        {
+            await _dynamoDb.UpdateItemAsync(request);
+            return true;
+        }
+        catch (ConditionalCheckFailedException)
+        {
+            return false;
+        }
     }
 
     public async Task<bool> ConfirmTicket(Ticket ticket)
     {
-       var request = new UpdateItemRequest
-       {
-           TableName = "Tickets",
-           Key = new Dictionary<string, AttributeValue>
-           {
-               { "PK", new AttributeValue { S = $"EVENT#{ticket.EventId}" } },
-               { "SK", new AttributeValue { S = $"TICKET#{ticket.TicketId}" } }
-           },
-           UpdateExpression = "SET #s = :confirmed, UpdatedAt = :now",
-           ConditionExpression = "#s = :reserved",
-           ExpressionAttributeNames = new Dictionary<string, string> { { "#s", "Status" } },
-           ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-           {
-               { ":confirmed", new AttributeValue { S = "Confirmed" } },
-               { ":reserved", new AttributeValue { S = "Reserved" } },
-               { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
-           }
-       };
+        var request = new UpdateItemRequest
+        {
+            TableName = "Tickets",
+            Key = new Dictionary<string, AttributeValue>
+            {
+                { "PK", new AttributeValue { S = $"EVENT#{ticket.EventId}" } },
+                { "SK", new AttributeValue { S = $"TICKET#{ticket.TicketId}" } }
+            },
+            UpdateExpression = "SET #s = :confirmed, UpdatedAt = :now",
+            ConditionExpression = "#s = :reserved",
+            ExpressionAttributeNames = new Dictionary<string, string> { { "#s", "Status" } },
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":confirmed", new AttributeValue { S = "Confirmed" } },
+                { ":reserved", new AttributeValue { S = "Reserved" } },
+                { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("O") } }
+            }
+        };
 
-       try
-       {
-           await _dynamoDb.UpdateItemAsync(request);
-           return true;
-       }
-       catch (ConditionalCheckFailedException)
-       {
-           return false;
-       }
+        try
+        {
+            await _dynamoDb.UpdateItemAsync(request);
+            return true;
+        }
+        catch (ConditionalCheckFailedException)
+        {
+            return false;
+        }
     }
 
     public async Task<List<Ticket>> GetTickets(string eventId)
@@ -104,7 +104,7 @@ public class DynamoDbTicketRepository : ITicketRepository
             {
                 EventId = eventId,
                 TicketId = int.TryParse(GetS("SK").Replace("TICKET#", ""), out var id) ? id : 0,
-                Status = GetS("Status"),
+                Status = Enum.TryParse(GetS("Status"), out TicketStatus status) ? status : TicketStatus.Available,
                 IsVip = item.TryGetValue("IsVip", out var vipAttr) && (vipAttr.BOOL ?? false),
                 UpdatedAt = item.TryGetValue("UpdatedAt", out var dateAttr) &&
                             DateTime.TryParse(dateAttr.S, out var date)
@@ -132,13 +132,14 @@ public class DynamoDbTicketRepository : ITicketRepository
         if (!response.IsItemSet) return null;
 
         var item = response.Item;
+        var statusTxt = item.TryGetValue("Status", out var st) ? st.S : "Available";
 
         return new Ticket
         {
             EventId = eventId,
             TicketId = ticketId,
-            Status = item.TryGetValue("Status", out var status) ? status.S : "Unknown",
-            UserId =  item.TryGetValue("UserId", out var userId) ? userId.S : "Unknown",
+            Status = Enum.TryParse(statusTxt, out TicketStatus status)? status : TicketStatus.Available,
+            UserId = item.TryGetValue("UserId", out var userId) ? userId.S : "Unknown",
             IsVip = item.TryGetValue("IsVip", out var vipAttr) && (vipAttr.BOOL ?? false),
             UpdatedAt = item.TryGetValue("UpdatedAt", out var updated)
                 ? DateTime.Parse(updated.S)

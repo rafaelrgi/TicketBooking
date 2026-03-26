@@ -27,7 +27,7 @@ public class TicketCacheService : ITicketCacheService
         }
         catch (Exception ex)
         {
-            _logger.LogError("Redis Offline!");
+            _logger.LogError("Redis Offline: {msg}", ex.Message);
         }
     }
 
@@ -39,7 +39,7 @@ public class TicketCacheService : ITicketCacheService
         }
         catch (Exception ex)
         {
-            _logger.LogError("Redis Offline (Read)");
+            _logger.LogError("Redis Offline (Read): {msg}", ex.Message);
             return null;
         }
     }
@@ -54,7 +54,7 @@ public class TicketCacheService : ITicketCacheService
         }
         catch(Exception ex)
         {
-            _logger.LogError("Redis Offline");
+            _logger.LogError("Redis Offline: {msg}", ex.Message);
         }
     }
 
